@@ -1,0 +1,42 @@
+name: FayE Lab CI
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'training/**'
+      - 'scripts/**'
+      - 'experiments/**'
+      - 'lab/**'
+      - '.github/workflows/faye-*.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate-lab:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Python syntax
+        run: |
+          python3 -m py_compile training/*.py scripts/*.py
+
+      - name: Shell syntax
+        run: |
+          bash -n scripts/run_ab_match.sh
+          bash -n scripts/run_faye_match.sh
+
+      - name: Validate JSON specs
+        run: |
+          python3 -m json.tool experiments/FAYE-0001-complexity-lmr.json >/dev/null
+          python3 -m json.tool lab/spsa/complexity_lmr.json >/dev/null
+
+      - name: Verify and compile complexity-LMR experimental patch
+        run: |
+          git apply --check experiments/patches/complexity-lmr.patch
+          git apply experiments/patches/complexity-lmr.patch
+          make -C src -j2 build ARCH=x86-64
+          printf 'uci\nquit\n' | ./src/stockfish | grep 'FayE_Complexity'

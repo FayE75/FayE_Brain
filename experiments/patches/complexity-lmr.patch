@@ -1,0 +1,158 @@
+diff --git a/src/faye.h b/src/faye.h
+new file mode 100644
+index 0000000..b21f000
+--- /dev/null
++++ b/src/faye.h
+@@ -0,0 +1,26 @@
++/*
++  FayE Brain experimental search controls.
++
++  This header deliberately contains only tiny inline scalar controls so an
++  experimental feature can be tuned through UCI without adding a runtime
++  dependency or changing Stockfish defaults.
++*/
++
++#ifndef FAYE_H_INCLUDED
++#define FAYE_H_INCLUDED
++
++namespace Stockfish::FayE {
++
++// Positive values make high-complexity quiet moves receive *less* LMR.
++// Negative values make them receive more LMR. Zero disables the experiment.
++inline int ComplexityLMRWeight = 0;
++
++// The material/NNUE disagreement value above which the LMR adjustment starts.
++inline int ComplexityThreshold = 384;
++
++// Maximum absolute LMR adjustment in Stockfish's internal 1/1024-ply units.
++inline int ComplexityLMRCap = 1024;
++
++}  // namespace Stockfish::FayE
++
++#endif  // #ifndef FAYE_H_INCLUDED
+diff --git a/src/evaluate.h b/src/evaluate.h
+index 82c619d..8c9f001 100644
+--- a/src/evaluate.h
++++ b/src/evaluate.h
+@@ -39,6 +39,9 @@ class AccumulatorStack;
+ 
+ std::string trace(Position& pos, const Eval::NNUE::Network& network);
+ 
++// Cheap FayE search-complexity signal in [0, 2048].
++int complexity_proxy(Value nnue_like_eval, const Position& pos);
++
+ Value evaluate(const NNUE::Network&           network,
+                const Position&                pos,
+                Eval::NNUE::AccumulatorStack&  accumulators,
+diff --git a/src/evaluate.cpp b/src/evaluate.cpp
+index 7caea18..42c1001 100644
+--- a/src/evaluate.cpp
++++ b/src/evaluate.cpp
+@@ -48,7 +48,7 @@ static int simple_eval(const Position& pos) {
+ // imbalance). The signal is exposed through `eval` so we can collect data
+ // before deciding whether a trained uncertainty head is worth integrating into
+ // search reductions/extensions.
+-static int faye_complexity_proxy(Value nnue, const Position& pos) {
++int Eval::complexity_proxy(Value nnue, const Position& pos) {
+     const int se = simple_eval(pos);
+ 
+     const int se_norm   = (se * 1024) / (std::abs(se) + 1024);
+@@ -115,7 +115,7 @@ std::string Eval::trace(Position& pos, const Eval::NNUE::Network& network) {
+ 
+     Value nnue = network.evaluate(pos, *accumulators, *caches);
+     Value s_v  = scale_evaluation(nnue, VALUE_ZERO, pos);  // requires stm perspective
+-    const int faye_complexity = faye_complexity_proxy(nnue, pos);
++    const int faye_complexity = Eval::complexity_proxy(nnue, pos);
+ 
+     ss << "NNUE evaluation          " << nnue << " (side to move, internal units)\n";
+     ss << "FayE complexity proxy    " << faye_complexity
+diff --git a/src/engine.cpp b/src/engine.cpp
+index 3179efa..a810001 100644
+--- a/src/engine.cpp
++++ b/src/engine.cpp
+@@ -29,6 +29,7 @@
+ #include <vector>
+ 
+ #include "evaluate.h"
++#include "faye.h"
+ #include "misc.h"
+ #include "nnue/network.h"
+ #include "nnue/nnue_common.h"
+@@ -112,6 +113,24 @@ Engine::Engine(std::optional<std::filesystem::path> path) :
+ 
+     options.add("UCI_ShowWDL", Option(false));
+ 
++    options.add(
++      "FayE_ComplexityLMRWeight", Option(0, -256, 256, [](const Option& o) {
++          FayE::ComplexityLMRWeight = int(o);
++          return std::nullopt;
++      }));
++
++    options.add(
++      "FayE_ComplexityThreshold", Option(384, 0, 2048, [](const Option& o) {
++          FayE::ComplexityThreshold = int(o);
++          return std::nullopt;
++      }));
++
++    options.add(
++      "FayE_ComplexityLMRCap", Option(1024, 0, 4096, [](const Option& o) {
++          FayE::ComplexityLMRCap = int(o);
++          return std::nullopt;
++      }));
++
+     options.add(  //
+       "SyzygyPath", Option("", [](const Option& o) {
+           Tablebases::init(o);
+diff --git a/src/search.cpp b/src/search.cpp
+index 0033e59..faae001 100644
+--- a/src/search.cpp
++++ b/src/search.cpp
+@@ -31,7 +31,8 @@
+ #include <utility>
+ 
+ #include "bitboard.h"
+ #include "evaluate.h"
++#include "faye.h"
+ #include "history.h"
+ #include "misc.h"
+ #include "movegen.h"
+@@ -753,7 +754,7 @@ Value Search::Worker::search(
+     Value bestValue, value, eval, maxValue, probCutBeta;
+     bool  givesCheck, improving, priorCapture, opponentWorsening;
+     bool  capture, ttCapture;
+-    int   priorReduction;
++    int   priorReduction, fayeComplexity = 0;
+     Piece movedPiece;
+ 
+     SearchedList capturesSearched;
+@@ -882,6 +883,10 @@ Value Search::Worker::search(
+                        unadjustedStaticEval, tt.generation());
+     }
+ 
++    if (!ss->inCheck && FayE::ComplexityLMRWeight != 0 && is_valid(unadjustedStaticEval))
++        fayeComplexity = Eval::complexity_proxy(unadjustedStaticEval, pos);
++
++
+     // Set up the improving flag, which is true if current static evaluation is
+     // bigger than the previous static evaluation at our turn (if we were in
+     // check at our previous move we go back until we weren't in check) and is
+@@ -1333,6 +1338,19 @@ moves_loop:  // When in check, search starts here
+         r -= moveCount * 65;
+         r -= std::abs(correctionValue) / 26310;
+ 
++        // FayE experiment: spend more search on quiet moves when the cheap
++        // material view and NNUE disagree. Positive weight means less LMR.
++        // The default weight is zero, so applying this patch preserves normal
++        // Stockfish search until the experiment is explicitly enabled.
++        if (!capture && FayE::ComplexityLMRWeight != 0
++            && fayeComplexity > FayE::ComplexityThreshold)
++        {
++            int adjustment = (fayeComplexity - FayE::ComplexityThreshold)
++                           * FayE::ComplexityLMRWeight / 256;
++            adjustment = std::clamp(adjustment, -FayE::ComplexityLMRCap, FayE::ComplexityLMRCap);
++            r -= adjustment;
++        }
++
+         // Increase reduction for cut nodes
+         if (cutNode)
+             r += 4026 + 933 * !ttData.move;

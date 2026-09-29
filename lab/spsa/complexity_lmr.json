@@ -1,0 +1,33 @@
+{
+  "name": "FayE complexity-guided LMR",
+  "description": "SPSA-style tuning space for the experimental complexity-LMR patch.",
+  "alpha": 0.602,
+  "gamma": 0.101,
+  "a_offset": 10.0,
+  "parameters": [
+    {
+      "name": "FayE_ComplexityLMRWeight",
+      "initial": 64,
+      "min": -256,
+      "max": 256,
+      "perturb": 32,
+      "learning_rate": 48
+    },
+    {
+      "name": "FayE_ComplexityThreshold",
+      "initial": 384,
+      "min": 0,
+      "max": 1600,
+      "perturb": 96,
+      "learning_rate": 180
+    },
+    {
+      "name": "FayE_ComplexityLMRCap",
+      "initial": 1024,
+      "min": 0,
+      "max": 3072,
+      "perturb": 256,
+      "learning_rate": 384
+    }
+  ]
+}

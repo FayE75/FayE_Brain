@@ -1,0 +1,28 @@
+{
+  "id": "FAYE-0001",
+  "title": "Complexity-guided late-move reductions",
+  "status": "planned",
+  "feature": "Use the FayE material-vs-NNUE disagreement proxy to reduce LMR in high-complexity quiet positions.",
+  "parent": {
+    "ref": "main",
+    "baseline_sha": "886f2505071c110f8151a93ef8a5af308a7364e2"
+  },
+  "candidate": {
+    "feature_patch": "experiments/patches/complexity-lmr.patch",
+    "default_options": {
+      "FayE_ComplexityLMRWeight": 64,
+      "FayE_ComplexityThreshold": 384,
+      "FayE_ComplexityLMRCap": 1024
+    }
+  },
+  "tuning": {
+    "method": "SPSA-style paired self-comparison",
+    "spec": "lab/spsa/complexity_lmr.json"
+  },
+  "acceptance": {
+    "primary": "candidate-vs-parent paired Fastchess SPRT",
+    "secondary": "NPS regression and LTC verification",
+    "external": "best accepted FayE vs latest official Stockfish master"
+  },
+  "decision": null
+}
