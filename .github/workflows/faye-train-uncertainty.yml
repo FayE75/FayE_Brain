@@ -1,0 +1,187 @@
+name: FayE Uncertainty Training
+
+on:
+  workflow_dispatch:
+    inputs:
+      dataset_profile:
+        description: Position source; separated from UHO strength-test openings by default
+        required: true
+        default: popular-lichess
+        type: choice
+        options:
+          - popular-lichess
+          - closed-positions
+          - frc-3moves
+      positions:
+        description: Number of teacher-labeled positions
+        required: true
+        default: '500'
+        type: string
+      shallow_nodes:
+        description: Shallow teacher nodes/position
+        required: true
+        default: '5000'
+        type: string
+      deep_nodes:
+        description: Deep teacher nodes/position
+        required: true
+        default: '50000'
+        type: string
+      hidden_size:
+        description: Tiny-head hidden width
+        required: true
+        default: '16'
+        type: string
+      epochs:
+        description: Training epochs
+        required: true
+        default: '25'
+        type: string
+      batch_size:
+        description: Batch size
+        required: true
+        default: '256'
+        type: string
+      learning_rate:
+        description: AdamW learning rate
+        required: true
+        default: '0.001'
+        type: string
+      weight_decay:
+        description: AdamW weight decay
+        required: true
+        default: '0.00001'
+        type: string
+      seed:
+        description: Dataset/training seed
+        required: true
+        default: '42'
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  train:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: training/requirements.txt
+
+      - name: Install Python training dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install 'python-chess>=1.999,<2'
+          python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Install engine build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends g++ make git curl unzip
+
+      - name: Build latest Stockfish teacher
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 https://github.com/official-stockfish/Stockfish.git teacher-stockfish
+          git -C teacher-stockfish rev-parse HEAD > teacher.sha
+          make -C teacher-stockfish/src -j2 profile-build ARCH=x86-64-avx2
+          mkdir -p build
+          cp teacher-stockfish/src/stockfish build/teacher
+          chmod +x build/teacher
+
+      - name: Download training positions
+        id: data
+        shell: bash
+        run: |
+          set -euo pipefail
+          CHESS960=false
+          case '${{ inputs.dataset_profile }}' in
+            popular-lichess) ARCHIVE='popularpos_lichess_v3.epd.zip' ;;
+            closed-positions) ARCHIVE='closedpos.epd.zip' ;;
+            frc-3moves) ARCHIVE='3moves_FRC.epd.zip'; CHESS960=true ;;
+            *) exit 2 ;;
+          esac
+          mkdir -p data/source
+          curl -L --fail --retry 3 "https://raw.githubusercontent.com/official-stockfish/books/master/$ARCHIVE" -o "data/source/$ARCHIVE"
+          unzip -o -j "data/source/$ARCHIVE" -d data/source
+          EPD=$(find data/source -maxdepth 1 -type f -name '*.epd' | head -n1)
+          echo "epd=$EPD" >> "$GITHUB_OUTPUT"
+          echo "archive=$ARCHIVE" >> "$GITHUB_OUTPUT"
+          echo "chess960=$CHESS960" >> "$GITHUB_OUTPUT"
+
+      - name: Generate teacher labels
+        shell: bash
+        run: |
+          set -euo pipefail
+          EXTRA=()
+          if [[ '${{ steps.data.outputs.chess960 }}' == true ]]; then EXTRA+=(--chess960); fi
+          python training/make_teacher_dataset.py \
+            --engine ./build/teacher \
+            --epd '${{ steps.data.outputs.epd }}' \
+            --output data/faye_uncertainty.jsonl \
+            --positions '${{ inputs.positions }}' \
+            --shallow-nodes '${{ inputs.shallow_nodes }}' \
+            --deep-nodes '${{ inputs.deep_nodes }}' \
+            --seed '${{ inputs.seed }}' \
+            "${EXTRA[@]}"
+
+      - name: Train tiny uncertainty head
+        run: |
+          python training/train_uncertainty.py \
+            --dataset data/faye_uncertainty.jsonl \
+            --output-dir models/uncertainty \
+            --hidden '${{ inputs.hidden_size }}' \
+            --epochs '${{ inputs.epochs }}' \
+            --batch-size '${{ inputs.batch_size }}' \
+            --learning-rate '${{ inputs.learning_rate }}' \
+            --weight-decay '${{ inputs.weight_decay }}' \
+            --seed '${{ inputs.seed }}' \
+            --device cpu
+
+      - name: Record run metadata
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json, pathlib
+          meta = {
+            'teacher_sha': pathlib.Path('teacher.sha').read_text().strip(),
+            'dataset_archive': '${{ steps.data.outputs.archive }}',
+            'positions': '${{ inputs.positions }}',
+            'shallow_nodes': '${{ inputs.shallow_nodes }}',
+            'deep_nodes': '${{ inputs.deep_nodes }}',
+            'hidden_size': '${{ inputs.hidden_size }}',
+            'epochs': '${{ inputs.epochs }}',
+            'batch_size': '${{ inputs.batch_size }}',
+            'learning_rate': '${{ inputs.learning_rate }}',
+            'weight_decay': '${{ inputs.weight_decay }}',
+            'seed': '${{ inputs.seed }}',
+            'note': 'Offline pilot artifact; not automatically integrated into the C++ search engine.'
+          }
+          pathlib.Path('models/uncertainty/run_metadata.json').write_text(json.dumps(meta, indent=2) + '\n')
+          PY
+          echo '## Training metrics' >> "$GITHUB_STEP_SUMMARY"
+          echo '```json' >> "$GITHUB_STEP_SUMMARY"
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          m=json.load(open('models/uncertainty/metrics.json'))
+          print(json.dumps({k:m[k] for k in ('examples','train_examples','val_examples','best_val_mse')}, indent=2))
+          PY
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload dataset and trained model
+        uses: actions/upload-artifact@v4
+        with:
+          name: faye-uncertainty-${{ github.run_id }}
+          path: |
+            data/faye_uncertainty.jsonl
+            models/uncertainty/
+            teacher.sha
+          retention-days: 30
