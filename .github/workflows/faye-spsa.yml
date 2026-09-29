@@ -43,7 +43,7 @@ on:
       hash_mb:
         description: Hash MB per engine
         required: true
-        default: '64'
+        default: '16'
         type: string
       variant:
         description: Chess variant
@@ -53,6 +53,11 @@ on:
         options:
           - standard
           - fischerandom
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/faye-spsa-trigger'
 
 permissions:
   contents: read
@@ -64,6 +69,14 @@ jobs:
     env:
       FASTCHESS_SHA: 60d7a7a26c6b0582a15c112fb29a1829bef2adb3
       BUILD_ARCH: x86-64-avx2
+      CANDIDATE_REF: ${{ inputs.candidate_ref || 'main' }}
+      TIME_CONTROL: ${{ inputs.time_control || '10+0.1' }}
+      ITERATIONS: ${{ inputs.iterations || '6' }}
+      GAMES_PER_ITERATION: ${{ inputs.games_per_iteration || '40' }}
+      CONCURRENCY: ${{ inputs.concurrency || '2' }}
+      THREADS: ${{ inputs.threads || '1' }}
+      HASH_MB: ${{ inputs.hash_mb || '16' }}
+      VARIANT: ${{ inputs.variant || 'standard' }}
 
     steps:
       - uses: actions/checkout@v4
@@ -79,7 +92,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          REF='${{ inputs.candidate_ref }}'
+          REF="$CANDIDATE_REF"
           if git rev-parse --verify "$REF^{commit}" >/dev/null 2>&1; then
             SHA=$(git rev-parse "$REF^{commit}")
           else
@@ -113,7 +126,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [[ '${{ inputs.variant }}' == fischerandom ]]; then
+          if [[ "$VARIANT" == fischerandom ]]; then
             ARCHIVE='3moves_FRC.epd.zip'
           else
             ARCHIVE='UHO_4060_v4.epd.zip'
@@ -134,13 +147,13 @@ jobs:
             --book '${{ steps.book.outputs.file }}' \
             --spec lab/spsa/complexity_lmr.json \
             --output-dir results/spsa \
-            --iterations '${{ inputs.iterations }}' \
-            --games-per-iteration '${{ inputs.games_per_iteration }}' \
-            --tc '${{ inputs.time_control }}' \
-            --variant '${{ inputs.variant }}' \
-            --threads '${{ inputs.threads }}' \
-            --hash-mb '${{ inputs.hash_mb }}' \
-            --concurrency '${{ inputs.concurrency }}' \
+            --iterations "$ITERATIONS" \
+            --games-per-iteration "$GAMES_PER_ITERATION" \
+            --tc "$TIME_CONTROL" \
+            --variant "$VARIANT" \
+            --threads "$THREADS" \
+            --hash-mb "$HASH_MB" \
+            --concurrency "$CONCURRENCY" \
             --seed '${{ github.run_id }}'
           echo '## SPSA-style result' >> "$GITHUB_STEP_SUMMARY"
           echo '```json' >> "$GITHUB_STEP_SUMMARY"
