@@ -1,0 +1,34 @@
+name: FayE Brain CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: faye-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-bench:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build FayE Brain
+        run: |
+          make -C src -j"$(nproc)" build ARCH=x86-64-avx2 COMP=gcc
+
+      - name: UCI smoke test
+        run: |
+          printf 'uci\nisready\nquit\n' | ./src/stockfish
+
+      - name: Benchmark
+        run: |
+          ./src/stockfish bench
