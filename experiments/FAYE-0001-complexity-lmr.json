@@ -1,7 +1,7 @@
 {
   "id": "FAYE-0001",
   "title": "Complexity-guided late-move reductions",
-  "status": "planned",
+  "status": "rejected",
   "feature": "Use the FayE material-vs-NNUE disagreement proxy to reduce LMR in high-complexity quiet positions.",
   "parent": {
     "ref": "main",
@@ -13,6 +13,11 @@
       "FayE_ComplexityLMRWeight": 64,
       "FayE_ComplexityThreshold": 384,
       "FayE_ComplexityLMRCap": 1024
+    },
+    "post_spsa_options": {
+      "FayE_ComplexityLMRWeight": 61,
+      "FayE_ComplexityThreshold": 387,
+      "FayE_ComplexityLMRCap": 1027
     }
   },
   "tuning": {
@@ -24,5 +29,22 @@
     "secondary": "NPS regression and LTC verification",
     "external": "best accepted FayE vs latest official Stockfish master"
   },
-  "decision": null
+  "decision": {
+    "outcome": "reject",
+    "reason": "Post-SPSA paired screening remained negative; do not promote to UHO_Lichess_4852_v1 SPRT.",
+    "screen": {
+      "games": 400,
+      "tc": "10+0.1",
+      "threads": 1,
+      "hash_mb": 16,
+      "book": "UHO_4060_v4.epd",
+      "wins": 104,
+      "losses": 116,
+      "draws": 180,
+      "elo": -10.43,
+      "elo_95_half_width": 16.65,
+      "los_percent": 10.95,
+      "pentanomial": [0, 54, 104, 42, 0]
+    }
+  }
 }
