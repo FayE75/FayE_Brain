@@ -1,0 +1,8 @@
+FAYE-0001 SPSA pilot
+TC=10+0.1
+iterations=6
+games_per_iteration=40
+concurrency=2
+threads=1
+hash_mb=16
+variant=standard
