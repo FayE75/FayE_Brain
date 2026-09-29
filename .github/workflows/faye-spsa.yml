@@ -1,0 +1,158 @@
+name: FayE SPSA-style Tuner
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_ref:
+        description: Source ref to tune
+        required: true
+        default: main
+        type: string
+      feature_patch:
+        description: Candidate feature patch
+        required: true
+        default: complexity-lmr
+        type: choice
+        options:
+          - complexity-lmr
+      time_control:
+        description: Fastchess TC
+        required: true
+        default: 10+0.1
+        type: string
+      iterations:
+        description: SPSA iterations
+        required: true
+        default: '6'
+        type: string
+      games_per_iteration:
+        description: Paired games per SPSA iteration (even)
+        required: true
+        default: '40'
+        type: string
+      concurrency:
+        description: Concurrent games
+        required: true
+        default: '2'
+        type: string
+      threads:
+        description: Threads per engine
+        required: true
+        default: '1'
+        type: string
+      hash_mb:
+        description: Hash MB per engine
+        required: true
+        default: '64'
+        type: string
+      variant:
+        description: Chess variant
+        required: true
+        default: standard
+        type: choice
+        options:
+          - standard
+          - fischerandom
+
+permissions:
+  contents: read
+
+jobs:
+  tune:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350
+    env:
+      FASTCHESS_SHA: 60d7a7a26c6b0582a15c112fb29a1829bef2adb3
+      BUILD_ARCH: x86-64-avx2
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends g++ make git curl unzip
+
+      - name: Resolve candidate and apply feature patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          REF='${{ inputs.candidate_ref }}'
+          if git rev-parse --verify "$REF^{commit}" >/dev/null 2>&1; then
+            SHA=$(git rev-parse "$REF^{commit}")
+          else
+            git fetch origin "$REF"
+            SHA=$(git rev-parse FETCH_HEAD)
+          fi
+          git worktree add --detach candidate "$SHA"
+          git -C candidate apply --check "$GITHUB_WORKSPACE/experiments/patches/complexity-lmr.patch"
+          git -C candidate apply "$GITHUB_WORKSPACE/experiments/patches/complexity-lmr.patch"
+          echo "$SHA" > candidate-base.sha
+
+      - name: Build tunable FayE
+        run: |
+          mkdir -p build
+          make -C candidate/src -j2 profile-build ARCH="$BUILD_ARCH"
+          cp candidate/src/stockfish build/faye-tunable
+          chmod +x build/faye-tunable
+          printf 'uci\nquit\n' | ./build/faye-tunable | grep 'FayE_Complexity'
+
+      - name: Build Fishtest Fastchess revision
+        run: |
+          git clone https://github.com/Disservin/fastchess.git fastchess-src
+          git -C fastchess-src checkout "$FASTCHESS_SHA"
+          make -C fastchess-src -j2 GIT_SHA="${FASTCHESS_SHA:0:8}" GIT_DATE=01010101
+          mkdir -p tools
+          cp fastchess-src/fastchess tools/fastchess
+          chmod +x tools/fastchess
+
+      - name: Download tuning openings
+        id: book
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ '${{ inputs.variant }}' == fischerandom ]]; then
+            ARCHIVE='3moves_FRC.epd.zip'
+          else
+            ARCHIVE='UHO_4060_v4.epd.zip'
+          fi
+          mkdir -p books
+          curl -L --fail --retry 3 "https://raw.githubusercontent.com/official-stockfish/books/master/$ARCHIVE" -o "books/$ARCHIVE"
+          unzip -o -j "books/$ARCHIVE" -d books
+          BOOK=$(find books -maxdepth 1 -type f -name '*.epd' | head -n1)
+          echo "file=$BOOK" >> "$GITHUB_OUTPUT"
+
+      - name: Run SPSA-style tuning
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/spsa_tune.py \
+            --engine ./build/faye-tunable \
+            --fastchess ./tools/fastchess \
+            --book '${{ steps.book.outputs.file }}' \
+            --spec lab/spsa/complexity_lmr.json \
+            --output-dir results/spsa \
+            --iterations '${{ inputs.iterations }}' \
+            --games-per-iteration '${{ inputs.games_per_iteration }}' \
+            --tc '${{ inputs.time_control }}' \
+            --variant '${{ inputs.variant }}' \
+            --threads '${{ inputs.threads }}' \
+            --hash-mb '${{ inputs.hash_mb }}' \
+            --concurrency '${{ inputs.concurrency }}' \
+            --seed '${{ github.run_id }}'
+          echo '## SPSA-style result' >> "$GITHUB_STEP_SUMMARY"
+          echo '```json' >> "$GITHUB_STEP_SUMMARY"
+          cat results/spsa/best_params.json >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload tuning state
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: faye-spsa-${{ github.run_id }}
+          path: |
+            results/
+            candidate-base.sha
+          retention-days: 30
