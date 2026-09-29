@@ -1,14 +1,14 @@
 diff --git a/src/search.cpp b/src/search.cpp
 --- a/src/search.cpp
 +++ b/src/search.cpp
-@@ -398,5 +398,4 @@
+@@ -398,6 +398,5 @@
                  // effective increment for every four searchAgain steps (see issue #2717).
                  Depth adjustedDepth = std::max(1, rootDepth - failedHighCnt - failHighRecovery
                                                      - 3 * (searchAgainCounter + 1) / 4);
 -                rootDelta           = beta - alpha;
                  bestValue           = search<Root>(rootPos, ss, alpha, beta, adjustedDepth, false);
  
-@@ -1177,9 +1176,11 @@
+@@ -1177,8 +1176,10 @@
          // Calculate new depth for this move
          newDepth = depth - 1;
  
@@ -32,7 +32,7 @@ diff --git a/src/search.cpp b/src/search.cpp
 diff --git a/src/search.h b/src/search.h
 --- a/src/search.h
 +++ b/src/search.h
-@@ -357,7 +357,7 @@
+@@ -357,6 +357,6 @@
      template<NodeType nodeType>
      Value qsearch(Position& pos, Stack* ss, Value alpha, Value beta);
  
@@ -40,7 +40,7 @@ diff --git a/src/search.h b/src/search.h
 +    int reduction(bool i, Depth d, int mn) const;
  
      // Pointer to the search manager, only allowed to be called by the main thread
-@@ -382,7 +382,6 @@
+@@ -382,6 +382,5 @@
      StateInfo rootState;
      RootMoves rootMoves;
      Depth     rootDepth;
