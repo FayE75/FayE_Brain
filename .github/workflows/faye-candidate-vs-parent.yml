@@ -1,0 +1,286 @@
+name: FayE Candidate vs Parent
+
+on:
+  workflow_dispatch:
+    inputs:
+      experiment_id:
+        description: Experiment ID, e.g. FAYE-0001
+        required: true
+        default: FAYE-0001
+        type: string
+      candidate_ref:
+        description: Candidate branch/tag/SHA in this repository
+        required: true
+        default: main
+        type: string
+      parent_ref:
+        description: Parent branch/tag/SHA in this repository
+        required: true
+        default: main
+        type: string
+      feature_patch:
+        description: Optional experimental patch applied only to candidate
+        required: true
+        default: complexity-lmr
+        type: choice
+        options:
+          - none
+          - complexity-lmr
+      candidate_options:
+        description: Semicolon-separated UCI options; blank uses patch defaults
+        required: false
+        default: ''
+        type: string
+      parent_options:
+        description: Semicolon-separated UCI options for parent
+        required: false
+        default: ''
+        type: string
+      variant:
+        description: Chess variant
+        required: true
+        default: standard
+        type: choice
+        options:
+          - standard
+          - fischerandom
+      book_profile:
+        description: Official Stockfish opening set
+        required: true
+        default: fishtest-standard
+        type: choice
+        options:
+          - fishtest-standard
+          - light-standard
+          - frc-3moves
+          - frc-starts
+      mode:
+        description: Fixed games or SPRT
+        required: true
+        default: sprt
+        type: choice
+        options:
+          - fixed
+          - sprt
+      time_control:
+        description: Fastchess TC, e.g. 10+0.1 or 60+0.6
+        required: true
+        default: 10+0.1
+        type: string
+      max_games:
+        description: Even maximum total games
+        required: true
+        default: '400'
+        type: string
+      concurrency:
+        description: Concurrent games
+        required: true
+        default: '2'
+        type: string
+      threads:
+        description: Threads per engine
+        required: true
+        default: '1'
+        type: string
+      hash_mb:
+        description: Hash MB per engine
+        required: true
+        default: '64'
+        type: string
+      sprt_elo0:
+        description: SPRT H0 nElo
+        required: true
+        default: '0'
+        type: string
+      sprt_elo1:
+        description: SPRT H1 nElo
+        required: true
+        default: '2'
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: faye-ab-${{ github.ref }}-${{ inputs.experiment_id }}
+  cancel-in-progress: false
+
+jobs:
+  match:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350
+    env:
+      FASTCHESS_SHA: 60d7a7a26c6b0582a15c112fb29a1829bef2adb3
+      BUILD_ARCH: x86-64-avx2
+
+    steps:
+      - name: Checkout lab controller
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends g++ make git curl unzip
+
+      - name: Resolve refs and create worktrees
+        id: refs
+        shell: bash
+        run: |
+          set -euo pipefail
+          resolve_ref() {
+            local ref="$1"
+            if git rev-parse --verify "$ref^{commit}" >/dev/null 2>&1; then
+              git rev-parse "$ref^{commit}"
+            else
+              git fetch origin "$ref"
+              git rev-parse FETCH_HEAD
+            fi
+          }
+          CANDIDATE_SHA=$(resolve_ref '${{ inputs.candidate_ref }}')
+          PARENT_SHA=$(resolve_ref '${{ inputs.parent_ref }}')
+          echo "candidate_sha=$CANDIDATE_SHA" >> "$GITHUB_OUTPUT"
+          echo "parent_sha=$PARENT_SHA" >> "$GITHUB_OUTPUT"
+          git worktree add --detach candidate "$CANDIDATE_SHA"
+          git worktree add --detach parent "$PARENT_SHA"
+
+      - name: Apply candidate feature patch
+        id: patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          PATCH='${{ inputs.feature_patch }}'
+          case "$PATCH" in
+            none)
+              echo "path=none" >> "$GITHUB_OUTPUT"
+              ;;
+            complexity-lmr)
+              P="$GITHUB_WORKSPACE/experiments/patches/complexity-lmr.patch"
+              git -C candidate apply --check "$P"
+              git -C candidate apply "$P"
+              echo "path=experiments/patches/complexity-lmr.patch" >> "$GITHUB_OUTPUT"
+              ;;
+            *) echo "Unknown patch: $PATCH" >&2; exit 2 ;;
+          esac
+
+      - name: Build candidate and parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build results
+          make -C candidate/src -j2 profile-build ARCH="$BUILD_ARCH"
+          cp candidate/src/stockfish build/candidate
+          make -C parent/src -j2 profile-build ARCH="$BUILD_ARCH"
+          cp parent/src/stockfish build/parent
+          chmod +x build/candidate build/parent
+          ./build/candidate bench 16 1 8 default depth > results/candidate-bench.txt 2>&1
+          ./build/parent bench 16 1 8 default depth > results/parent-bench.txt 2>&1
+
+      - name: Build Fishtest Fastchess revision
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone https://github.com/Disservin/fastchess.git fastchess-src
+          git -C fastchess-src checkout "$FASTCHESS_SHA"
+          make -C fastchess-src -j2 GIT_SHA="${FASTCHESS_SHA:0:8}" GIT_DATE=01010101
+          mkdir -p tools
+          cp fastchess-src/fastchess tools/fastchess
+          chmod +x tools/fastchess
+
+      - name: Resolve and download opening set
+        id: book
+        shell: bash
+        run: |
+          set -euo pipefail
+          case '${{ inputs.book_profile }}' in
+            fishtest-standard) ARCHIVE='UHO_Lichess_4852_v1.epd.zip' ;;
+            light-standard) ARCHIVE='UHO_4060_v4.epd.zip' ;;
+            frc-3moves) ARCHIVE='3moves_FRC.epd.zip' ;;
+            frc-starts) ARCHIVE='FRC_openings.epd.zip' ;;
+            *) exit 2 ;;
+          esac
+          mkdir -p books
+          curl -L --fail --retry 3 "https://raw.githubusercontent.com/official-stockfish/books/master/$ARCHIVE" -o "books/$ARCHIVE"
+          unzip -o -j "books/$ARCHIVE" -d books
+          BOOK=$(find books -maxdepth 1 -type f -name '*.epd' | head -n1)
+          echo "file=$BOOK" >> "$GITHUB_OUTPUT"
+          echo "archive=$ARCHIVE" >> "$GITHUB_OUTPUT"
+
+      - name: Validate game count and options
+        id: cfg
+        shell: bash
+        run: |
+          set -euo pipefail
+          GAMES='${{ inputs.max_games }}'
+          [[ "$GAMES" =~ ^[0-9]+$ ]] && (( GAMES >= 2 && GAMES % 2 == 0 )) || { echo 'max_games must be even >=2' >&2; exit 2; }
+          echo "rounds=$((GAMES / 2))" >> "$GITHUB_OUTPUT"
+          CANDIDATE_OPTIONS='${{ inputs.candidate_options }}'
+          if [[ -z "$CANDIDATE_OPTIONS" && '${{ inputs.feature_patch }}' == 'complexity-lmr' ]]; then
+            CANDIDATE_OPTIONS='FayE_ComplexityLMRWeight=64;FayE_ComplexityThreshold=384;FayE_ComplexityLMRCap=1024'
+          fi
+          echo "candidate_options=$CANDIDATE_OPTIONS" >> "$GITHUB_OUTPUT"
+
+      - name: Run paired candidate vs parent
+        shell: bash
+        env:
+          ENGINE_A: ./build/candidate
+          ENGINE_B: ./build/parent
+          ENGINE_A_NAME: FayE-candidate
+          ENGINE_B_NAME: FayE-parent
+          ENGINE_A_OPTIONS: ${{ steps.cfg.outputs.candidate_options }}
+          ENGINE_B_OPTIONS: ${{ inputs.parent_options }}
+          FASTCHESS: ./tools/fastchess
+          BOOK_FILE: ${{ steps.book.outputs.file }}
+          VARIANT: ${{ inputs.variant }}
+          TC: ${{ inputs.time_control }}
+          ROUNDS: ${{ steps.cfg.outputs.rounds }}
+          CONCURRENCY: ${{ inputs.concurrency }}
+          THREADS: ${{ inputs.threads }}
+          HASH_MB: ${{ inputs.hash_mb }}
+          MODE: ${{ inputs.mode }}
+          SPRT_ELO0: ${{ inputs.sprt_elo0 }}
+          SPRT_ELO1: ${{ inputs.sprt_elo1 }}
+          SEED: ${{ github.run_id }}
+          OUTPUT_DIR: results
+        run: |
+          chmod +x scripts/run_ab_match.sh
+          scripts/run_ab_match.sh
+
+      - name: Summarize and record experiment metadata
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -s results/ab-match.pgn ]]; then
+            python3 scripts/summarize_ab.py results/ab-match.pgn \
+              --json-out results/summary.json --markdown-out results/summary.md
+            cat results/summary.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+          python3 - <<'PY'
+          import json, pathlib
+          meta = {
+            "experiment_id": "${{ inputs.experiment_id }}",
+            "candidate_ref": "${{ inputs.candidate_ref }}",
+            "candidate_sha": "${{ steps.refs.outputs.candidate_sha }}",
+            "parent_ref": "${{ inputs.parent_ref }}",
+            "parent_sha": "${{ steps.refs.outputs.parent_sha }}",
+            "feature_patch": "${{ steps.patch.outputs.path }}",
+            "candidate_options": "${{ steps.cfg.outputs.candidate_options }}",
+            "parent_options": "${{ inputs.parent_options }}",
+            "variant": "${{ inputs.variant }}",
+            "book": "${{ steps.book.outputs.archive }}",
+            "mode": "${{ inputs.mode }}",
+            "tc": "${{ inputs.time_control }}",
+            "max_games": "${{ inputs.max_games }}"
+          }
+          pathlib.Path('results/experiment-metadata.json').write_text(json.dumps(meta, indent=2) + '\n')
+          PY
+
+      - name: Upload experiment result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.experiment_id }}-${{ github.run_id }}
+          path: results/
+          retention-days: 30
