@@ -2,3 +2,4 @@ FAYE-0002 pv-lmr-constant screen
 rerun-after-patch-fix: 2026-09-30
 rerun-after-hunk-structure-fix: 2026-09-30T05:52+07:00
 rerun-after-context-fix: 2026-09-30T06:40+07:00
+rerun-after-hunk-count-fix: 2026-09-30T07:00+07:00
