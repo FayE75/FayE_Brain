@@ -1,0 +1,132 @@
+name: FayE Post-SPSA A/B
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/faye-post-spsa-trigger"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: faye-post-spsa-ab
+  cancel-in-progress: false
+
+jobs:
+  match:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350
+    env:
+      FASTCHESS_SHA: 60d7a7a26c6b0582a15c112fb29a1829bef2adb3
+      BUILD_ARCH: x86-64-avx2
+      CANDIDATE_OPTIONS: FayE_ComplexityLMRWeight=61;FayE_ComplexityThreshold=387;FayE_ComplexityLMRCap=1027
+      GAMES: '400'
+      TC: 10+0.1
+      HASH_MB: '16'
+      THREADS: '1'
+      CONCURRENCY: '2'
+
+    steps:
+      - name: Checkout controller
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends g++ make git curl unzip
+
+      - name: Create candidate and parent worktrees
+        run: |
+          set -euo pipefail
+          SHA=$(git rev-parse HEAD)
+          git worktree add --detach candidate "$SHA"
+          git worktree add --detach parent "$SHA"
+          git -C candidate apply --check "$GITHUB_WORKSPACE/experiments/patches/complexity-lmr.patch"
+          git -C candidate apply "$GITHUB_WORKSPACE/experiments/patches/complexity-lmr.patch"
+          echo "$SHA" > results-parent-sha.txt
+
+      - name: Build candidate and parent
+        run: |
+          set -euo pipefail
+          mkdir -p build results
+          make -C candidate/src -j2 profile-build ARCH="$BUILD_ARCH"
+          cp candidate/src/stockfish build/candidate
+          make -C parent/src -j2 profile-build ARCH="$BUILD_ARCH"
+          cp parent/src/stockfish build/parent
+          chmod +x build/candidate build/parent
+
+      - name: Build pinned Fastchess
+        run: |
+          set -euo pipefail
+          git clone https://github.com/Disservin/fastchess.git fastchess-src
+          git -C fastchess-src checkout "$FASTCHESS_SHA"
+          make -C fastchess-src -j2 GIT_SHA="${FASTCHESS_SHA:0:8}" GIT_DATE=01010101
+          mkdir -p tools
+          cp fastchess-src/fastchess tools/fastchess
+          chmod +x tools/fastchess
+
+      - name: Download UHO openings
+        id: book
+        run: |
+          set -euo pipefail
+          mkdir -p books
+          curl -L --fail --retry 3 \
+            https://raw.githubusercontent.com/official-stockfish/books/master/UHO_4060_v4.epd.zip \
+            -o books/UHO_4060_v4.epd.zip
+          unzip -o -j books/UHO_4060_v4.epd.zip -d books
+          echo "file=books/UHO_4060_v4.epd" >> "$GITHUB_OUTPUT"
+
+      - name: Run tuned candidate vs parent
+        env:
+          ENGINE_A: ./build/candidate
+          ENGINE_B: ./build/parent
+          ENGINE_A_NAME: FayE-tuned
+          ENGINE_B_NAME: FayE-parent
+          ENGINE_A_OPTIONS: ${{ env.CANDIDATE_OPTIONS }}
+          ENGINE_B_OPTIONS: ''
+          FASTCHESS: ./tools/fastchess
+          BOOK_FILE: ${{ steps.book.outputs.file }}
+          VARIANT: standard
+          ROUNDS: '200'
+          MODE: fixed
+          OUTPUT_DIR: results
+          SPRT_ELO0: '0'
+          SPRT_ELO1: '2'
+          SEED: ${{ github.run_id }}
+        run: |
+          chmod +x scripts/run_ab_match.sh
+          scripts/run_ab_match.sh
+
+      - name: Summarize
+        if: always()
+        run: |
+          if [[ -s results/ab-match.pgn ]]; then
+            python3 scripts/summarize_ab.py results/ab-match.pgn \
+              --json-out results/summary.json --markdown-out results/summary.md
+            cat results/summary.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+          python3 - <<'PY'
+          import json, pathlib, os
+          meta = {
+            "experiment_id": "FAYE-0001-post-spsa",
+            "candidate_options": os.environ["CANDIDATE_OPTIONS"],
+            "games": 400,
+            "tc": os.environ["TC"],
+            "threads": int(os.environ["THREADS"]),
+            "hash_mb": int(os.environ["HASH_MB"]),
+            "book": "UHO_4060_v4.epd"
+          }
+          pathlib.Path('results/post-spsa-metadata.json').write_text(json.dumps(meta, indent=2) + '\n')
+          PY
+
+      - name: Upload result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FAYE-0001-post-spsa-${{ github.run_id }}
+          path: results/
+          retention-days: 30
