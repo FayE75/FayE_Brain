@@ -1,0 +1,25 @@
+{
+  "id": "FAYE-0002",
+  "title": "Constant PV LMR discount",
+  "status": "candidate-vs-parent",
+  "hypothesis": "Removing aspiration-window delta dependence from LMR and using a constant PV-node reduction discount can reduce search-effort feedback from aspiration failures while preserving the existing sparse NNUE evaluation path.",
+  "feature": "Search-only LMR change derived from Stockfish PR #7148: remove rootDelta/delta coupling, apply a constant -512 reduction adjustment at PV nodes, and retune the reduction offset from 982 to 948.",
+  "parent_ref": "main",
+  "patch": "experiments/patches/pv-lmr-constant.patch",
+  "source": {
+    "upstream": "official-stockfish/Stockfish#7148",
+    "upstream_status_at_registration": "open",
+    "upstream_reported_tests": ["non-reg STC passed", "non-reg LTC passed", "non-reg STC SMP passed"]
+  },
+  "screening": {
+    "book": "UHO_Lichess_4852_v1.epd",
+    "games": 400,
+    "tc": "10+0.1",
+    "threads": 1,
+    "hash_mb": 16,
+    "paired": true,
+    "mode": "fixed"
+  },
+  "promotion_rule": "Only promote to a larger Fishtest-style SPRT if the small paired screen is not clearly negative; do not merge from the screen alone.",
+  "notes": "FAYE-0001 Complexity-LMR was rejected after post-SPSA validation. FAYE-0002 intentionally changes a separate search mechanism and does not add or duplicate NNUE relational features."
+}
