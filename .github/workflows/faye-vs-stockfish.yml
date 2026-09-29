@@ -1,0 +1,267 @@
+name: FayE vs Stockfish (Fishtest-style)
+
+on:
+  workflow_dispatch:
+    inputs:
+      variant:
+        description: Chess variant
+        required: true
+        type: choice
+        default: standard
+        options:
+          - standard
+          - fischerandom
+      book_profile:
+        description: Official Stockfish opening set
+        required: true
+        type: choice
+        default: auto
+        options:
+          - auto
+          - fishtest-standard
+          - light-standard
+          - frc-3moves
+          - frc-starts
+      mode:
+        description: Fixed game count or SPRT (both remain capped by max games)
+        required: true
+        type: choice
+        default: fixed
+        options:
+          - fixed
+          - sprt
+      time_control:
+        description: Fastchess time control, e.g. 10+0.1 or LTC 60+0.6
+        required: true
+        default: 10+0.1
+        type: string
+      max_games:
+        description: Maximum total games; must be an even number
+        required: true
+        default: '200'
+        type: string
+      concurrency:
+        description: Concurrent games on the runner
+        required: true
+        default: '2'
+        type: string
+      threads:
+        description: Threads per engine
+        required: true
+        default: '1'
+        type: string
+      hash_mb:
+        description: Hash MB per engine
+        required: true
+        default: '64'
+        type: string
+      sprt_elo0:
+        description: SPRT H0 nElo
+        required: true
+        default: '0'
+        type: string
+      sprt_elo1:
+        description: SPRT H1 nElo
+        required: true
+        default: '2'
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: faye-match-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  match:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350
+
+    env:
+      FASTCHESS_SHA: 60d7a7a26c6b0582a15c112fb29a1829bef2adb3
+      BUILD_ARCH: x86-64-avx2
+
+    steps:
+      - name: Checkout FayE candidate
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends g++ make git curl unzip
+
+      - name: Resolve test configuration
+        id: cfg
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          GAMES='${{ inputs.max_games }}'
+          if [[ ! "$GAMES" =~ ^[0-9]+$ ]] || (( GAMES < 2 )) || (( GAMES % 2 != 0 )); then
+            echo "max_games must be an even integer >= 2" >&2
+            exit 2
+          fi
+          ROUNDS=$((GAMES / 2))
+
+          case '${{ inputs.book_profile }}' in
+            auto)
+              if [[ '${{ inputs.variant }}' == 'fischerandom' ]]; then
+                ARCHIVE='3moves_FRC.epd.zip'
+              else
+                ARCHIVE='UHO_Lichess_4852_v1.epd.zip'
+              fi
+              ;;
+            fishtest-standard) ARCHIVE='UHO_Lichess_4852_v1.epd.zip' ;;
+            light-standard)    ARCHIVE='UHO_4060_v4.epd.zip' ;;
+            frc-3moves)        ARCHIVE='3moves_FRC.epd.zip' ;;
+            frc-starts)        ARCHIVE='FRC_openings.epd.zip' ;;
+            *) echo "Unknown book profile" >&2; exit 2 ;;
+          esac
+
+          echo "rounds=$ROUNDS" >> "$GITHUB_OUTPUT"
+          echo "archive=$ARCHIVE" >> "$GITHUB_OUTPUT"
+          echo "seed=${GITHUB_RUN_ID}" >> "$GITHUB_OUTPUT"
+
+          echo "### Match configuration" >> "$GITHUB_STEP_SUMMARY"
+          echo "- FayE ref: \`${GITHUB_REF_NAME}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Opponent: latest official Stockfish master at job start" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Variant: \`${{ inputs.variant }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Book: \`$ARCHIVE\` from \`official-stockfish/books\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- TC: \`${{ inputs.time_control }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Maximum games: \`$GAMES\` ($ROUNDS paired openings)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Mode: \`${{ inputs.mode }}\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Build FayE candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build
+          FAYE_SHA=$(git rev-parse HEAD)
+          echo "$FAYE_SHA" > build/faye.sha
+          make -C src -j2 profile-build ARCH="$BUILD_ARCH"
+          cp src/stockfish build/faye
+          chmod +x build/faye
+          ./build/faye bench 16 1 8 default depth | tail -n 8
+
+      - name: Clone and build latest official Stockfish
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 https://github.com/official-stockfish/Stockfish.git upstream-stockfish
+          SF_SHA=$(git -C upstream-stockfish rev-parse HEAD)
+          echo "$SF_SHA" > build/stockfish.sha
+          make -C upstream-stockfish/src -j2 profile-build ARCH="$BUILD_ARCH"
+          cp upstream-stockfish/src/stockfish build/stockfish
+          chmod +x build/stockfish
+          ./build/stockfish bench 16 1 8 default depth | tail -n 8
+
+      - name: Build the same Fastchess revision used by current Fishtest worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p tools
+          git clone https://github.com/Disservin/fastchess.git fastchess-src
+          git -C fastchess-src checkout "$FASTCHESS_SHA"
+          make -C fastchess-src -j2 GIT_SHA="${FASTCHESS_SHA:0:8}" GIT_DATE=01010101
+          cp fastchess-src/fastchess tools/fastchess
+          chmod +x tools/fastchess
+          ./tools/fastchess --version
+
+      - name: Download official Stockfish opening positions
+        id: book
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p books
+          ARCHIVE='${{ steps.cfg.outputs.archive }}'
+          URL="https://raw.githubusercontent.com/official-stockfish/books/master/$ARCHIVE"
+          echo "Downloading $URL"
+          curl -L --fail --retry 3 --retry-delay 2 "$URL" -o "books/$ARCHIVE"
+          unzip -o -j "books/$ARCHIVE" -d books
+          BOOK_FILE=$(find books -maxdepth 1 -type f -name '*.epd' | head -n 1)
+          if [[ -z "$BOOK_FILE" ]]; then
+            echo "No .epd file extracted from $ARCHIVE" >&2
+            exit 2
+          fi
+          echo "file=$BOOK_FILE" >> "$GITHUB_OUTPUT"
+          echo "Opening file: $BOOK_FILE"
+          wc -l "$BOOK_FILE" || true
+
+      - name: UCI compliance smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./tools/fastchess --compliance ./build/faye
+          ./tools/fastchess --compliance ./build/stockfish
+
+      - name: Run paired FayE vs Stockfish match
+        shell: bash
+        env:
+          FAYE_ENGINE: ./build/faye
+          STOCKFISH_ENGINE: ./build/stockfish
+          FASTCHESS: ./tools/fastchess
+          BOOK_FILE: ${{ steps.book.outputs.file }}
+          VARIANT: ${{ inputs.variant }}
+          TC: ${{ inputs.time_control }}
+          ROUNDS: ${{ steps.cfg.outputs.rounds }}
+          CONCURRENCY: ${{ inputs.concurrency }}
+          THREADS: ${{ inputs.threads }}
+          HASH_MB: ${{ inputs.hash_mb }}
+          MODE: ${{ inputs.mode }}
+          SPRT_ELO0: ${{ inputs.sprt_elo0 }}
+          SPRT_ELO1: ${{ inputs.sprt_elo1 }}
+          SPRT_ALPHA: '0.05'
+          SPRT_BETA: '0.05'
+          SEED: ${{ steps.cfg.outputs.seed }}
+          OUTPUT_DIR: results
+        run: |
+          chmod +x scripts/run_faye_match.sh
+          scripts/run_faye_match.sh
+
+      - name: Summarize result
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p results
+          if [[ -s results/faye-vs-stockfish.pgn ]]; then
+            python3 scripts/summarize_match.py results/faye-vs-stockfish.pgn \
+              --json-out results/summary.json \
+              --markdown-out results/summary.md
+            cat results/summary.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "## No completed PGN games were available to summarize" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          python3 - <<'PY'
+          import json, os, pathlib
+          meta = {
+              "faye_sha": pathlib.Path("build/faye.sha").read_text().strip() if pathlib.Path("build/faye.sha").exists() else None,
+              "stockfish_sha": pathlib.Path("build/stockfish.sha").read_text().strip() if pathlib.Path("build/stockfish.sha").exists() else None,
+              "fastchess_sha": os.environ.get("FASTCHESS_SHA"),
+              "variant": "${{ inputs.variant }}",
+              "book_archive": "${{ steps.cfg.outputs.archive }}",
+              "time_control": "${{ inputs.time_control }}",
+              "mode": "${{ inputs.mode }}",
+              "max_games": "${{ inputs.max_games }}",
+              "threads": "${{ inputs.threads }}",
+              "hash_mb": "${{ inputs.hash_mb }}",
+              "concurrency": "${{ inputs.concurrency }}",
+          }
+          pathlib.Path("results/metadata.json").write_text(json.dumps(meta, indent=2) + "\n")
+          PY
+
+      - name: Upload PGN, Fastchess log, and metadata
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: faye-vs-stockfish-${{ github.run_id }}
+          path: |
+            results/
+            build/faye.sha
+            build/stockfish.sha
+          if-no-files-found: warn
+          retention-days: 30

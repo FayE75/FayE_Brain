@@ -43,6 +43,25 @@ static int simple_eval(const Position& pos) {
          - pos.non_pawn_material(~c);
 }
 
+// FayE Brain Phase 1 diagnostic signal.
+//
+// This is intentionally NOT a learned uncertainty head and it does not alter
+// search or evaluation. It measures disagreement between a very cheap material
+// view and the NNUE view after both are normalized to the same bounded range.
+// Higher values indicate positions where material and NNUE tell substantially
+// different stories (for example compensation, king safety, or tactical
+// imbalance). The signal is exposed through `eval` so we can collect data
+// before deciding whether a trained uncertainty head is worth integrating into
+// search reductions/extensions.
+static int faye_complexity_proxy(Value nnue, const Position& pos) {
+    const int se = simple_eval(pos);
+
+    const int se_norm   = (se * 1024) / (std::abs(se) + 1024);
+    const int nnue_norm = (nnue * 1024) / (std::abs(nnue) + 1024);
+
+    return std::clamp(std::abs(se_norm - nnue_norm), 0, 2048);
+}
+
 Value scale_evaluation(Value nnue, int optimism, const Position& pos);
 
 Value Eval::evaluate(const Eval::NNUE::Network&     network,
@@ -104,8 +123,11 @@ std::string Eval::trace(Position& pos, const Eval::NNUE::Network& network) {
 
     Value nnue = network.evaluate(pos, *accumulators, *caches);
     Value s_v  = scale_evaluation(nnue, VALUE_ZERO, pos);  // requires stm perspective
+    const int faye_complexity = faye_complexity_proxy(nnue, pos);
 
     ss << "NNUE evaluation          " << nnue << " (side to move, internal units)\n";
+    ss << "FayE complexity proxy    " << faye_complexity
+       << "/2048 (material-NNUE disagreement; diagnostic only)\n";
 
     nnue = pos.side_to_move() == WHITE ? nnue : -nnue;
     s_v  = pos.side_to_move() == WHITE ? s_v : -s_v;
