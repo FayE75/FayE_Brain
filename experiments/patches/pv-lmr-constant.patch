@@ -9,7 +9,7 @@ diff --git a/src/search.cpp b/src/search.cpp
                  bestValue           = search<Root>(rootPos, ss, alpha, beta, adjustedDepth, false);
  
                  // Bring the best move to the front. It is critical that sorting
-@@ -1176,9 +1175,11 @@ Value Search::Worker::search(
+@@ -1176,8 +1175,10 @@ Value Search::Worker::search(
          // Calculate new depth for this move
          newDepth = depth - 1;
  
@@ -23,7 +23,7 @@ diff --git a/src/search.cpp b/src/search.cpp
  
          // Increase reduction for ttPv nodes
          // (*Scaler) Larger values scale well.
-@@ -1905,9 +1906,9 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
+@@ -1905,6 +1906,6 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
      return bestValue;
  }
  
@@ -33,11 +33,11 @@ diff --git a/src/search.cpp b/src/search.cpp
 -    return reductionScale - delta * 577 / rootDelta + !i * reductionScale * 197 / 512 + 982;
 +    return reductionScale + !i * reductionScale * 197 / 512 + 948;
  }
- 
+
 diff --git a/src/search.h b/src/search.h
 --- a/src/search.h
 +++ b/src/search.h
-@@ -358,7 +358,7 @@ class Worker {
+@@ -358,6 +358,6 @@ class Worker {
      template<NodeType nodeType>
      Value qsearch(Position& pos, Stack* ss, Value alpha, Value beta);
  
@@ -45,7 +45,6 @@ diff --git a/src/search.h b/src/search.h
 +    int reduction(bool i, Depth d, int mn) const;
  
      // Pointer to the search manager, only allowed to be called by the main thread
-     SearchManager* main_manager() const {
 @@ -383,7 +383,6 @@ class Worker {
      StateInfo rootState;
      RootMoves rootMoves;
