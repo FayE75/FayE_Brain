@@ -1,12 +1,15 @@
 diff --git a/src/search.cpp b/src/search.cpp
 --- a/src/search.cpp
 +++ b/src/search.cpp
-@@ -398,4 +398,3 @@
+@@ -398,5 +398,4 @@
+                 // effective increment for every four searchAgain steps (see issue #2717).
                  Depth adjustedDepth = std::max(1, rootDepth - failedHighCnt - failHighRecovery
                                                      - 3 * (searchAgainCounter + 1) / 4);
 -                rootDelta           = beta - alpha;
                  bestValue           = search<Root>(rootPos, ss, alpha, beta, adjustedDepth, false);
-@@ -1178,6 +1177,8 @@
+ 
+@@ -1177,9 +1176,11 @@
+         // Calculate new depth for this move
          newDepth = depth - 1;
  
 -        int delta = beta - alpha;
@@ -18,7 +21,8 @@ diff --git a/src/search.cpp b/src/search.cpp
 +        if (PvNode)
 +            r -= 512;
  
-@@ -1906,3 +1907,3 @@
+         // Increase reduction for ttPv nodes
+@@ -1907,4 +1908,4 @@
 -int Search::Worker::reduction(bool i, Depth d, int mn, int delta) const {
 +int Search::Worker::reduction(bool i, Depth d, int mn) const {
      int reductionScale = reductions[d] * reductions[mn];
@@ -28,9 +32,18 @@ diff --git a/src/search.cpp b/src/search.cpp
 diff --git a/src/search.h b/src/search.h
 --- a/src/search.h
 +++ b/src/search.h
-@@ -360,1 +360,1 @@
+@@ -357,7 +357,7 @@
+     template<NodeType nodeType>
+     Value qsearch(Position& pos, Stack* ss, Value alpha, Value beta);
+ 
 -    int reduction(bool i, Depth d, int mn, int delta) const;
 +    int reduction(bool i, Depth d, int mn) const;
-@@ -385,2 +385,1 @@
+ 
+     // Pointer to the search manager, only allowed to be called by the main thread
+@@ -382,7 +382,6 @@
+     StateInfo rootState;
+     RootMoves rootMoves;
      Depth     rootDepth;
 -    Value     rootDelta;
+ 
+     PVMoves lastIterationIdxPV;
