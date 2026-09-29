@@ -53,6 +53,8 @@ A useful signal should correlate with search instability or large deeper-search 
 
 Confirm that adding diagnostic reporting does not change normal search results or benchmark signature when the `eval` command is not used.
 
+The repository includes a FayE-specific GitHub Actions workflow that compiles the engine, runs a UCI smoke test, and executes the built-in benchmark for changes targeting `main`.
+
 ### P2 — Learned uncertainty head
 
 Only if Phase 1 shows useful correlation, train a very small quantized head that estimates search uncertainty/instability from existing NNUE activations.
