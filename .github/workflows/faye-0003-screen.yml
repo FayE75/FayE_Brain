@@ -43,8 +43,8 @@ jobs:
           mkdir -p results
           git worktree add --detach candidate "$SHA"
           git worktree add --detach parent "$SHA"
-          git -C candidate apply --check "$GITHUB_WORKSPACE/experiments/patches/pp-accumulator-cache.patch"
-          git -C candidate apply "$GITHUB_WORKSPACE/experiments/patches/pp-accumulator-cache.patch"
+          git -C candidate apply --recount --check "$GITHUB_WORKSPACE/experiments/patches/pp-accumulator-cache.patch"
+          git -C candidate apply --recount "$GITHUB_WORKSPACE/experiments/patches/pp-accumulator-cache.patch"
           echo "$SHA" > results/parent-sha.txt
 
       - name: Build candidate and parent
