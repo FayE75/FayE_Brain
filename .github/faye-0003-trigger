@@ -2,3 +2,4 @@ FAYE-0003 PP accumulator cache screen
 Started 2026-09-30
 Retry 1: git apply --recount
 Retry 2: fetch canonical official-stockfish/Stockfish#7149.diff
+Retry 3: fetch pinned PR head via git and generate local diff
