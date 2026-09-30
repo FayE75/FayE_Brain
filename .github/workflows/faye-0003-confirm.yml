@@ -1,0 +1,173 @@
+name: FAYE-0003 PP Cache Confirmation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/faye-0003-confirm-trigger"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: faye-0003-confirm
+  cancel-in-progress: false
+
+jobs:
+  confirm:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350
+    env:
+      FASTCHESS_SHA: 60d7a7a26c6b0582a15c112fb29a1829bef2adb3
+      BUILD_ARCH: x86-64-avx2
+      TC: 10+0.1
+      HASH_MB: '16'
+      THREADS: '1'
+      CONCURRENCY: '2'
+
+    steps:
+      - name: Checkout controller
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends g++ make git curl unzip
+
+      - name: Create candidate and parent worktrees
+        run: |
+          set -euo pipefail
+          SHA=$(git rev-parse HEAD)
+          mkdir -p results
+          git worktree add --detach candidate "$SHA"
+          git worktree add --detach parent "$SHA"
+
+          git -C candidate remote add sf-upstream https://github.com/official-stockfish/Stockfish.git
+          git -C candidate fetch --no-tags sf-upstream refs/pull/7149/head
+          PR_HEAD=$(git -C candidate rev-parse FETCH_HEAD)
+          EXPECTED_HEAD=1d630a236c8cb01553aa69a09b22c494b38c7c34
+          EXPECTED_BASE=59aae690f91d6f69aac194f447d84b4a2c3be778
+          test "$PR_HEAD" = "$EXPECTED_HEAD" || { echo "Unexpected PR #7149 head: $PR_HEAD"; exit 1; }
+          PR_BASE=$(git -C candidate rev-parse "${PR_HEAD}^2")
+          test "$PR_BASE" = "$EXPECTED_BASE" || { echo "Unexpected PR #7149 upstream parent: $PR_BASE"; exit 1; }
+
+          git -C candidate diff "$PR_BASE" "$PR_HEAD" -- \
+            src/nnue/nnue_accumulator.cpp src/nnue/nnue_accumulator.h \
+            > /tmp/pp-accumulator-cache.diff
+          test -s /tmp/pp-accumulator-cache.diff
+          cp /tmp/pp-accumulator-cache.diff results/upstream-7149.diff
+          git -C candidate apply --check /tmp/pp-accumulator-cache.diff
+          git -C candidate apply /tmp/pp-accumulator-cache.diff
+          echo "$SHA" > results/parent-sha.txt
+          printf '%s\n' "$PR_HEAD" > results/upstream-pr-head.txt
+          printf '%s\n' "$PR_BASE" > results/upstream-pr-base.txt
+
+      - name: Build candidate and parent
+        run: |
+          set -euo pipefail
+          mkdir -p build results
+          make -C candidate/src -j2 profile-build ARCH="$BUILD_ARCH"
+          cp candidate/src/stockfish build/candidate
+          make -C parent/src -j2 profile-build ARCH="$BUILD_ARCH"
+          cp parent/src/stockfish build/parent
+          chmod +x build/candidate build/parent
+
+      - name: Verify functional bench
+        run: |
+          set -euo pipefail
+          ./build/parent bench 16 1 13 default depth > results/parent-bench.txt 2>&1
+          ./build/candidate bench 16 1 13 default depth > results/candidate-bench.txt 2>&1
+          PARENT_NODES=$(grep 'Nodes searched' results/parent-bench.txt | tail -1 | awk '{print $4}')
+          CANDIDATE_NODES=$(grep 'Nodes searched' results/candidate-bench.txt | tail -1 | awk '{print $4}')
+          test -n "$PARENT_NODES" && test -n "$CANDIDATE_NODES"
+          test "$PARENT_NODES" = "$CANDIDATE_NODES" || { echo "Functional bench mismatch: $CANDIDATE_NODES vs $PARENT_NODES"; exit 1; }
+          printf 'Bench nodes: %s\n' "$PARENT_NODES" | tee results/bench-check.txt
+
+      - name: Build pinned Fastchess
+        run: |
+          set -euo pipefail
+          git clone https://github.com/Disservin/fastchess.git fastchess-src
+          git -C fastchess-src checkout "$FASTCHESS_SHA"
+          make -C fastchess-src -j2 GIT_SHA="${FASTCHESS_SHA:0:8}" GIT_DATE=01010101
+          mkdir -p tools
+          cp fastchess-src/fastchess tools/fastchess
+          chmod +x tools/fastchess
+
+      - name: Download Fishtest default opening set
+        id: book
+        run: |
+          set -euo pipefail
+          mkdir -p books
+          curl -L --fail --retry 3 https://raw.githubusercontent.com/official-stockfish/books/master/UHO_Lichess_4852_v1.epd.zip -o books/UHO_Lichess_4852_v1.epd.zip
+          unzip -o -j books/UHO_Lichess_4852_v1.epd.zip -d books
+          echo "file=books/UHO_Lichess_4852_v1.epd" >> "$GITHUB_OUTPUT"
+
+      - name: Run paired normalized SPRT confirmation
+        env:
+          ENGINE_A: ./build/candidate
+          ENGINE_B: ./build/parent
+          ENGINE_A_NAME: FAYE-0003
+          ENGINE_B_NAME: FayE-parent
+          ENGINE_A_OPTIONS: ''
+          ENGINE_B_OPTIONS: ''
+          FASTCHESS: ./tools/fastchess
+          BOOK_FILE: ${{ steps.book.outputs.file }}
+          VARIANT: standard
+          TC: ${{ env.TC }}
+          ROUNDS: '600'
+          CONCURRENCY: ${{ env.CONCURRENCY }}
+          THREADS: ${{ env.THREADS }}
+          HASH_MB: ${{ env.HASH_MB }}
+          MODE: sprt
+          OUTPUT_DIR: results
+          SPRT_ELO0: '0'
+          SPRT_ELO1: '2'
+          SEED: ${{ github.run_id }}
+        run: |
+          chmod +x scripts/run_ab_match.sh
+          scripts/run_ab_match.sh
+
+      - name: Summarize
+        if: always()
+        run: |
+          if [[ -s results/ab-match.pgn ]]; then
+            python3 scripts/summarize_ab.py results/ab-match.pgn \
+              --candidate-name FAYE-0003 \
+              --parent-name FayE-parent \
+              --json-out results/summary.json \
+              --markdown-out results/summary.md
+            cat results/summary.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+          python3 - <<'PY'
+          import json, pathlib
+          meta={
+            "experiment_id":"FAYE-0003",
+            "stage":"confirmation",
+            "patch":"official-stockfish/Stockfish#7149 pinned git diff",
+            "source":"official-stockfish/Stockfish#7149",
+            "upstream_head":"1d630a236c8cb01553aa69a09b22c494b38c7c34",
+            "upstream_base":"59aae690f91d6f69aac194f447d84b4a2c3be778",
+            "max_games":1200,
+            "tc":"10+0.1",
+            "threads":1,
+            "hash_mb":16,
+            "book":"UHO_Lichess_4852_v1.epd",
+            "paired":True,
+            "mode":"sprt",
+            "elo0":0,
+            "elo1":2,
+            "alpha":0.05,
+            "beta":0.05
+          }
+          pathlib.Path('results/experiment-metadata.json').write_text(json.dumps(meta,indent=2)+'\n')
+          PY
+
+      - name: Upload result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FAYE-0003-confirm-${{ github.run_id }}
+          path: results/
+          retention-days: 30
