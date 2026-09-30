@@ -1,0 +1,29 @@
+{
+  "id": "FAYE-0005",
+  "title": "Remove redundant TT miss guards in search",
+  "status": "screening",
+  "mechanism": "transposition-table/search CPU efficiency",
+  "candidate_only": true,
+  "source": "official-stockfish/Stockfish#6835",
+  "upstream_head": "995fd5480e6bc852846f3f1cf878e5b3d60c04e4",
+  "upstream_base": "133731f33166afcde7fb7a76c41e47c3cddcee8b",
+  "rationale": "Stockfish PR #6835 removes redundant ttHit-dependent reassignments after TT probe. It passed a large non-regression STC (645408 games, LLR 5.07; 164134 W / 164382 L / 316892 D) and is explicitly non-functional. FayE's current TT probe already returns Move::none() and VALUE_NONE on misses, while both main search and qsearch still re-guard those fields, so the core optimization remains directly applicable without changing NNUE features or search semantics.",
+  "protocol": {
+    "stage": "small paired screen plus NPS microbenchmark",
+    "book": "UHO_Lichess_4852_v1.epd",
+    "games": 400,
+    "paired_repeat": true,
+    "tc": "10+0.1",
+    "threads": 1,
+    "hash_mb": 16,
+    "build_arch": "x86-64-avx2",
+    "bench_repeats": 5
+  },
+  "promotion_rule": "Do not merge from this screen. Promote only if functional bench is identical and the combined strength/efficiency signal is not clearly adverse; then run a larger Fishtest-style confirmation on UHO_Lichess_4852_v1.",
+  "notes": [
+    "One mechanism only: remove redundant ttHit guards for move/value after probe in main search and qsearch.",
+    "FayE TT miss initialization was verified before creating the experiment.",
+    "No NNUE architecture, relational feature, or time-management changes.",
+    "FAYE-0004 was no-promoted after a flat 400-game screen and 0.000% median NPS delta."
+  ]
+}
