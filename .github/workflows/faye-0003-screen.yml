@@ -1,0 +1,158 @@
+name: FAYE-0003 PP Cache Screen
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/faye-0003-trigger"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: faye-0003-screen
+  cancel-in-progress: false
+
+jobs:
+  match:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350
+    env:
+      FASTCHESS_SHA: 60d7a7a26c6b0582a15c112fb29a1829bef2adb3
+      BUILD_ARCH: x86-64-avx2
+      TC: 10+0.1
+      HASH_MB: '16'
+      THREADS: '1'
+      CONCURRENCY: '2'
+
+    steps:
+      - name: Checkout controller
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends g++ make git curl unzip
+
+      - name: Create candidate and parent worktrees
+        run: |
+          set -euo pipefail
+          SHA=$(git rev-parse HEAD)
+          mkdir -p results
+          git worktree add --detach candidate "$SHA"
+          git worktree add --detach parent "$SHA"
+          git -C candidate apply --check "$GITHUB_WORKSPACE/experiments/patches/pp-accumulator-cache.patch"
+          git -C candidate apply "$GITHUB_WORKSPACE/experiments/patches/pp-accumulator-cache.patch"
+          echo "$SHA" > results/parent-sha.txt
+
+      - name: Build candidate and parent
+        run: |
+          set -euo pipefail
+          mkdir -p build results
+          make -C candidate/src -j2 profile-build ARCH="$BUILD_ARCH"
+          cp candidate/src/stockfish build/candidate
+          make -C parent/src -j2 profile-build ARCH="$BUILD_ARCH"
+          cp parent/src/stockfish build/parent
+          chmod +x build/candidate build/parent
+
+      - name: Verify bench and measure NPS
+        run: |
+          set -euo pipefail
+          for i in 1 2 3 4 5; do
+            ./build/parent bench 16 1 8 default depth > "results/parent-bench-${i}.txt" 2>&1
+            ./build/candidate bench 16 1 8 default depth > "results/candidate-bench-${i}.txt" 2>&1
+          done
+          python3 - <<'PY'
+          import json, pathlib, re, statistics
+          def read(prefix):
+              vals=[]
+              nodes=[]
+              for p in sorted(pathlib.Path('results').glob(prefix+'-bench-*.txt')):
+                  txt=p.read_text(errors='replace')
+                  m=re.search(r'Nodes/second\s*:\s*(\d+)',txt)
+                  n=re.search(r'Nodes searched\s*:\s*(\d+)',txt)
+                  if not m or not n:
+                      raise SystemExit(f'Cannot parse {p}')
+                  vals.append(int(m.group(1)))
+                  nodes.append(int(n.group(1)))
+              return vals,nodes
+          cand,cand_nodes=read('candidate')
+          parent,parent_nodes=read('parent')
+          if len(set(cand_nodes+parent_nodes)) != 1:
+              raise SystemExit('Functional bench mismatch: candidate and parent searched different node counts')
+          cm=statistics.median(cand)
+          pm=statistics.median(parent)
+          speed=(cm/pm-1.0)*100.0
+          out={'candidate_nps':cand,'parent_nps':parent,'candidate_median_nps':cm,'parent_median_nps':pm,'median_speedup_percent':speed,'bench_nodes':cand_nodes[0]}
+          pathlib.Path('results/efficiency.json').write_text(json.dumps(out,indent=2)+'\n')
+          pathlib.Path('results/efficiency.md').write_text(f'### FAYE-0003 bench efficiency\n\n- Candidate median NPS: {cm:,.0f}\n- Parent median NPS: {pm:,.0f}\n- Median speedup: {speed:+.3f}%\n- Bench nodes: {cand_nodes[0]:,}\n')
+          print(pathlib.Path('results/efficiency.md').read_text())
+          PY
+          cat results/efficiency.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Build pinned Fastchess
+        run: |
+          set -euo pipefail
+          git clone https://github.com/Disservin/fastchess.git fastchess-src
+          git -C fastchess-src checkout "$FASTCHESS_SHA"
+          make -C fastchess-src -j2 GIT_SHA="${FASTCHESS_SHA:0:8}" GIT_DATE=01010101
+          mkdir -p tools
+          cp fastchess-src/fastchess tools/fastchess
+          chmod +x tools/fastchess
+
+      - name: Download Fishtest default opening set
+        id: book
+        run: |
+          set -euo pipefail
+          mkdir -p books
+          curl -L --fail --retry 3 https://raw.githubusercontent.com/official-stockfish/books/master/UHO_Lichess_4852_v1.epd.zip -o books/UHO_Lichess_4852_v1.epd.zip
+          unzip -o -j books/UHO_Lichess_4852_v1.epd.zip -d books
+          echo "file=books/UHO_Lichess_4852_v1.epd" >> "$GITHUB_OUTPUT"
+
+      - name: Run paired screen
+        env:
+          ENGINE_A: ./build/candidate
+          ENGINE_B: ./build/parent
+          ENGINE_A_NAME: FAYE-0003
+          ENGINE_B_NAME: FayE-parent
+          ENGINE_A_OPTIONS: ''
+          ENGINE_B_OPTIONS: ''
+          FASTCHESS: ./tools/fastchess
+          BOOK_FILE: ${{ steps.book.outputs.file }}
+          VARIANT: standard
+          TC: ${{ env.TC }}
+          ROUNDS: '200'
+          CONCURRENCY: ${{ env.CONCURRENCY }}
+          THREADS: ${{ env.THREADS }}
+          HASH_MB: ${{ env.HASH_MB }}
+          MODE: fixed
+          OUTPUT_DIR: results
+          SPRT_ELO0: '0'
+          SPRT_ELO1: '2'
+          SEED: ${{ github.run_id }}
+        run: |
+          chmod +x scripts/run_ab_match.sh
+          scripts/run_ab_match.sh
+
+      - name: Summarize
+        if: always()
+        run: |
+          if [[ -s results/ab-match.pgn ]]; then
+            python3 scripts/summarize_ab.py results/ab-match.pgn --json-out results/summary.json --markdown-out results/summary.md
+            cat results/summary.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+          python3 - <<'PY'
+          import json, pathlib
+          meta={"experiment_id":"FAYE-0003","patch":"pp-accumulator-cache.patch","source":"official-stockfish/Stockfish#7149","games":400,"tc":"10+0.1","threads":1,"hash_mb":16,"book":"UHO_Lichess_4852_v1.epd","paired":True,"mode":"fixed"}
+          pathlib.Path('results/experiment-metadata.json').write_text(json.dumps(meta,indent=2)+'\n')
+          PY
+
+      - name: Upload result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FAYE-0003-screen-${{ github.run_id }}
+          path: results/
+          retention-days: 30
