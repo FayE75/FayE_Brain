@@ -1,0 +1,26 @@
+{
+  "id": "FAYE-0003",
+  "title": "Pawn-pair accumulator cache",
+  "status": "candidate-vs-parent",
+  "hypothesis": "Caching PP_3Wide pawn-pair accumulator contributions across NNUE refreshes can reduce repeated pair-feature recomputation while preserving identical evaluation semantics, improving CPU efficiency and potentially time-control strength.",
+  "feature": "NNUE refresh-cache optimization based on Stockfish PR #7149. It adds a small pawn-keyed cache for PP feature accumulations and incrementally updates the cached entry when pawn structure changes. This does not add new relational features; it accelerates the PP_3Wide features already present in the September 2026 Stockfish baseline.",
+  "parent_ref": "main",
+  "patch": "experiments/patches/pp-accumulator-cache.patch",
+  "source": {
+    "upstream": "official-stockfish/Stockfish#7149",
+    "upstream_status_at_registration": "open",
+    "upstream_reported_local_speedup": "+0.432% +/- 0.544%",
+    "upstream_reported_test": "Passed Fishtest STC: LLR 2.93 (-2.94,2.94) <0.00,2.00>, 189152 games"
+  },
+  "screening": {
+    "book": "UHO_Lichess_4852_v1.epd",
+    "games": 400,
+    "tc": "10+0.1",
+    "threads": 1,
+    "hash_mb": 16,
+    "paired": true,
+    "mode": "fixed"
+  },
+  "promotion_rule": "Promote only if compile/bench is clean and the paired screen is not clearly negative. If the point estimate is neutral but NPS/bench indicates a measurable efficiency improvement, retain as an efficiency candidate and confirm with a larger Fishtest-style run before any merge.",
+  "notes": "FAYE-0001 was rejected after post-SPSA validation. FAYE-0002 screened exactly neutral at 400 games and is not being promoted immediately. FAYE-0003 shifts to sparse/incremental NNUE efficiency rather than another LMR heuristic."
+}
