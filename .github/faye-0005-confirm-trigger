@@ -1,9 +1,10 @@
-2026-09-30T23:30:00+07:00
-experiment=FAYE-0005-confirmation
-screen_run=36730487113
-screen_result=98-199-103
-screen_elo=-4.34+/-16.94
-screen_median_nps_speedup=+1.527%
+2026-10-01T05:11:31+07:00
+experiment=FAYE-0005-confirmation-repeat
+prior_confirmation_run=36745239935
+prior_confirmation_result=321-581-298
+prior_confirmation_elo=+6.66+/-8.94
+prior_confirmation_los=92.79%
+prior_confirmation_llr=0.27
 mode=normalized-sprt
 max_games=1200
 elo0=0
