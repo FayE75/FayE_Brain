@@ -1,7 +1,7 @@
 {
   "id": "FAYE-0005",
   "title": "Remove redundant TT miss guards in search",
-  "status": "confirmation",
+  "status": "confirmation-repeat",
   "mechanism": "transposition-table/search CPU efficiency",
   "candidate_only": true,
   "source": "official-stockfish/Stockfish#6835",
@@ -27,9 +27,36 @@
     "median_speedup_percent": 1.5267,
     "bench_nodes": 115769,
     "functional_bench_identical": true,
-    "decision": "Advance to confirmation. The 400-game strength result is inconclusive and slightly negative, but the change is non-functional, functional bench nodes are identical, and the hosted-runner microbenchmark shows a +1.527% median NPS signal. A larger fresh paired normalized-SPRT confirmation is justified before any merge decision."
+    "decision": "Advance to confirmation because strength was inconclusive while the non-functional patch showed a reproducible-looking +1.527% median NPS signal."
   },
   "confirmation": {
+    "workflow_run": 36745239935,
+    "book": "UHO_Lichess_4852_v1.epd",
+    "games": 1200,
+    "paired_repeat": true,
+    "tc": "10+0.1",
+    "threads": 1,
+    "hash_mb": 16,
+    "mode": "normalized SPRT",
+    "elo0": 0,
+    "elo1": 2,
+    "alpha": 0.05,
+    "beta": 0.05,
+    "wins": 321,
+    "draws": 581,
+    "losses": 298,
+    "score_percent": 50.9583,
+    "descriptive_elo": 6.66,
+    "elo_95ci_half_width": 8.94,
+    "los_percent": 92.79,
+    "pentanomial": [1, 110, 354, 135, 0],
+    "llr": 0.27,
+    "llr_lower": -2.94,
+    "llr_upper": 2.94,
+    "sprt_decision": "inconclusive at 1200-game hosted-runner cap",
+    "decision": "Run one fresh 1200-game paired repeat confirmation rather than merge or reject. The first confirmation is positive (+6.66 Elo, LOS 92.79%) but SPRT did not cross a boundary (LLR 0.27), and the hosted runner cannot safely extend one job much beyond this duration."
+  },
+  "repeat_confirmation": {
     "book": "UHO_Lichess_4852_v1.epd",
     "max_games": 1200,
     "paired_repeat": true,
@@ -40,9 +67,10 @@
     "elo0": 0,
     "elo1": 2,
     "alpha": 0.05,
-    "beta": 0.05
+    "beta": 0.05,
+    "seed": "fresh github.run_id"
   },
-  "promotion_rule": "Do not merge from the 400-game screen. Promote only if the fresh confirmation is not adverse and the efficiency signal remains reproducible; otherwise mark no-promotion and move to another mechanism.",
+  "promotion_rule": "Do not merge from the screen or a single inconclusive confirmation. Evaluate the independent repeat together with the first confirmation; promote only if strength remains non-adverse and the efficiency signal remains credible. Otherwise mark no-promotion and move to another mechanism.",
   "notes": [
     "One mechanism only: remove redundant ttHit guards for move/value after probe in main search and qsearch.",
     "FayE TT miss initialization was verified before creating the experiment.",
