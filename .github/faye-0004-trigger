@@ -1,0 +1,4 @@
+FAYE-0004 trigger
+Experiment: avoid recomputing capture status in do_move
+Source: official-stockfish/Stockfish#7199
+Protocol: UHO_Lichess_4852_v1, 400 paired games, 10+0.1, 1 thread, Hash 16 MB, plus 5x bench NPS
