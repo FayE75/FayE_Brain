@@ -43,13 +43,28 @@ jobs:
           mkdir -p results
           git worktree add --detach candidate "$SHA"
           git worktree add --detach parent "$SHA"
-          curl -L --fail --retry 3 \
-            https://github.com/official-stockfish/Stockfish/pull/7149.diff \
-            -o /tmp/pp-accumulator-cache.diff
+
+          # Fetch the exact tested upstream PR head through Git rather than the
+          # GitHub .diff endpoint, which can intermittently return HTTP 503.
+          git -C candidate remote add sf-upstream https://github.com/official-stockfish/Stockfish.git
+          git -C candidate fetch --no-tags sf-upstream refs/pull/7149/head
+          PR_HEAD=$(git -C candidate rev-parse FETCH_HEAD)
+          EXPECTED_HEAD=1d630a236c8cb01553aa69a09b22c494b38c7c34
+          EXPECTED_BASE=59aae690f91d6f69aac194f447d84b4a2c3be778
+          test "$PR_HEAD" = "$EXPECTED_HEAD" || { echo "Unexpected PR #7149 head: $PR_HEAD"; exit 1; }
+          PR_BASE=$(git -C candidate rev-parse "${PR_HEAD}^2")
+          test "$PR_BASE" = "$EXPECTED_BASE" || { echo "Unexpected PR #7149 upstream parent: $PR_BASE"; exit 1; }
+
+          git -C candidate diff "$PR_BASE" "$PR_HEAD" -- \
+            src/nnue/nnue_accumulator.cpp src/nnue/nnue_accumulator.h \
+            > /tmp/pp-accumulator-cache.diff
+          test -s /tmp/pp-accumulator-cache.diff
           cp /tmp/pp-accumulator-cache.diff results/upstream-7149.diff
           git -C candidate apply --check /tmp/pp-accumulator-cache.diff
           git -C candidate apply /tmp/pp-accumulator-cache.diff
           echo "$SHA" > results/parent-sha.txt
+          printf '%s\n' "$PR_HEAD" > results/upstream-pr-head.txt
+          printf '%s\n' "$PR_BASE" > results/upstream-pr-base.txt
 
       - name: Build candidate and parent
         run: |
@@ -149,7 +164,7 @@ jobs:
           fi
           python3 - <<'PY'
           import json, pathlib
-          meta={"experiment_id":"FAYE-0003","patch":"official-stockfish/Stockfish#7149.diff","source":"official-stockfish/Stockfish#7149","games":400,"tc":"10+0.1","threads":1,"hash_mb":16,"book":"UHO_Lichess_4852_v1.epd","paired":True,"mode":"fixed"}
+          meta={"experiment_id":"FAYE-0003","patch":"official-stockfish/Stockfish#7149 pinned git diff","source":"official-stockfish/Stockfish#7149","upstream_head":"1d630a236c8cb01553aa69a09b22c494b38c7c34","upstream_base":"59aae690f91d6f69aac194f447d84b4a2c3be778","games":400,"tc":"10+0.1","threads":1,"hash_mb":16,"book":"UHO_Lichess_4852_v1.epd","paired":True,"mode":"fixed"}
           pathlib.Path('results/experiment-metadata.json').write_text(json.dumps(meta,indent=2)+'\n')
           PY
 
