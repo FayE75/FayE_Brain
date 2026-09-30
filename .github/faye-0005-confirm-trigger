@@ -1,0 +1,14 @@
+2026-09-30T23:30:00+07:00
+experiment=FAYE-0005-confirmation
+screen_run=36730487113
+screen_result=98-199-103
+screen_elo=-4.34+/-16.94
+screen_median_nps_speedup=+1.527%
+mode=normalized-sprt
+max_games=1200
+elo0=0
+elo1=2
+book=UHO_Lichess_4852_v1.epd
+tc=10+0.1
+threads=1
+hash_mb=16
