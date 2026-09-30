@@ -1,13 +1,13 @@
 {
   "id": "FAYE-0004",
   "title": "Avoid recomputing capture status in do_move",
-  "status": "screening",
+  "status": "no-promotion",
   "mechanism": "search CPU efficiency",
   "candidate_only": true,
   "source": "official-stockfish/Stockfish#7199",
   "upstream_head": "29411829c6a0f07bd1839c78807a05143388df6c",
   "upstream_base": "0a215d6c9e48856ef630013b8ab8312941a59057",
-  "rationale": "Current Stockfish PR #7199 avoids recomputing capture_stage(move) inside do_move when the caller already knows capture status. The upstream STC passed at LLR 2.94 with 137152 games (34973 W / 34548 L / 67631 D), and the change is explicitly non-functional. FayE still has the pre-change do_move implementation, so this is a small isolated efficiency candidate with direct architectural fit and no NNUE feature duplication.",
+  "rationale": "Current Stockfish PR #7199 avoids recomputing capture_stage(move) inside do_move when the caller already knows capture status. The upstream STC passed at LLR 2.94 with 137152 games (34973 W / 34548 L / 67631 D), and the change is explicitly non-functional. FayE still had the pre-change do_move implementation, so this was tested as a small isolated efficiency candidate with direct architectural fit and no NNUE feature duplication.",
   "protocol": {
     "stage": "small paired screen plus NPS microbenchmark",
     "book": "UHO_Lichess_4852_v1.epd",
@@ -19,11 +19,26 @@
     "build_arch": "x86-64-avx2",
     "bench_repeats": 5
   },
-  "promotion_rule": "Do not merge from this screen. Promote only if functional bench is identical and the combined strength/efficiency signal is not clearly adverse; then run a larger Fishtest-style confirmation on UHO_Lichess_4852_v1.",
+  "result": {
+    "workflow_run": 36714912288,
+    "wins": 98,
+    "draws": 203,
+    "losses": 99,
+    "elo": -0.87,
+    "elo_95ci_half_width": 15.71,
+    "los_percent": 45.68,
+    "pentanomial": [1, 40, 118, 41, 0],
+    "candidate_median_nps": 870443,
+    "parent_median_nps": 870443,
+    "median_speedup_percent": 0.0,
+    "bench_nodes": 115769,
+    "functional_bench_identical": true
+  },
+  "decision": "No promotion. The 400-game paired screen was essentially flat and the five-repeat bench microbenchmark showed exactly 0.000% median NPS improvement. With neither a strength nor measurable efficiency signal, a larger confirmation is not justified.",
   "notes": [
     "One mechanism only: pass already-computed capture status into do_move.",
     "No NNUE architecture or relational feature changes.",
-    "Patch is generated from a pinned upstream PR head/base and restricted to src/search.cpp and src/search.h.",
-    "FAYE-0001 rejected; FAYE-0002 no-promotion; FAYE-0003 no-promotion. This experiment uses a different mechanism."
+    "Patch was generated from a pinned upstream PR head/base and restricted to src/search.cpp and src/search.h.",
+    "FAYE-0001 rejected; FAYE-0002 no-promotion; FAYE-0003 no-promotion; FAYE-0004 no-promotion."
   ]
 }
