@@ -1,0 +1,10 @@
+2026-09-30T13:00:00+07:00
+experiment=FAYE-0003-confirmation
+book=UHO_Lichess_4852_v1
+mode=normalized-sprt
+elo0=0
+elo1=2
+max_games=1200
+tc=10+0.1
+threads=1
+hash_mb=16
