@@ -1,0 +1,133 @@
+{
+  "id": "FAYE-0008",
+  "title": "Major CPU-Only Multi-Signal Adaptive Search Architecture",
+  "status": "queued-after-FAYE-0007",
+  "scale": "major-architecture-experiment",
+  "intent": "Create a genuinely FayE-specific CPU-only architecture rather than another isolated upstream micro-patch.",
+  "sequencing": [
+    "Finish FAYE-0006 decision.",
+    "Run FAYE-0007 as the final planned small isolated MovePicker efficiency experiment.",
+    "Freeze the best validated baseline.",
+    "Perform a non-functional modernization pass on the full engine codebase and CI, preserving algorithmic behavior.",
+    "Build FAYE-0008 on top of the modernized validated baseline."
+  ],
+  "novelty_gate": {
+    "requirement": "Before implementation, audit latest official Stockfish master, historical Stockfish code/PRs, and relevant literature so the core mechanism is not merely a previously used Stockfish feature under a new name.",
+    "current_master_observation": "Current Stockfish/FayE NNUE architecture is value-oriented with a single final scalar output; no explicit policy head, uncertainty/confidence head, or unified neural search controller is present in the audited current source.",
+    "reject_if": "The proposed core mechanism is already materially implemented in current or historical Stockfish, or if it cannot be isolated enough to test."
+  },
+  "modernization": {
+    "scope": "whole engine repository",
+    "rule": "Modernization must be separated from strength changes so attribution remains possible.",
+    "goals": [
+      "sync and reconcile with current upstream-safe infrastructure where appropriate without importing unvalidated strength changes",
+      "reduce duplicated search/control plumbing",
+      "introduce explicit typed structures for search signals and controller outputs",
+      "improve const-correctness, ownership clarity, RAII, compile-time checks, and module boundaries",
+      "strengthen CI with compiler matrix, sanitizers, perft/bench determinism, format/lint checks where practical",
+      "keep hot-path allocations at zero and preserve vectorized NNUE paths",
+      "retain broad CPU portability; do not require GPU/CUDA at runtime",
+      "only raise the C++ language standard if compiler/platform matrix proves it safe and worthwhile"
+    ],
+    "acceptance": [
+      "perft equality",
+      "functional bench consistency",
+      "no unintended NNUE-format break",
+      "no material NPS regression before the experimental feature is enabled"
+    ]
+  },
+  "architecture": {
+    "runtime": "CPU-only",
+    "core_components": [
+      {
+        "name": "Tiny auxiliary NNUE heads",
+        "outputs": [
+          "uncertainty/confidence",
+          "position complexity/volatility"
+        ],
+        "constraint": "Reuse existing NNUE representation; extremely small quantized heads with a strict runtime overhead budget."
+      },
+      {
+        "name": "Search-instability estimator",
+        "signals": [
+          "iterative-deepening evaluation delta",
+          "best-move churn",
+          "fail-high/fail-low behavior",
+          "TT/search disagreement",
+          "PV instability"
+        ],
+        "constraint": "Use search data already produced by the engine wherever possible."
+      },
+      {
+        "name": "Tiny learned move-ordering prior",
+        "purpose": "Provide a low-cost policy-like prior for move ordering without a large transformer or MCTS policy network.",
+        "constraint": "CPU-friendly, sparse/quantized, only if ablations justify overhead."
+      },
+      {
+        "name": "Unified Adaptive Search Controller",
+        "controls": [
+          "LMR",
+          "futility pruning",
+          "null-move pruning and verification",
+          "extensions",
+          "probcut/selective verification",
+          "optional time allocation at root"
+        ],
+        "rule": "Controller changes search effort according to explicit uncertainty/complexity/instability rather than one fixed aggressiveness profile."
+      }
+    ]
+  },
+  "research_inspiration": [
+    {
+      "title": "Amortized Planning with Large-Scale Transformers: A Case Study on Chess",
+      "year": 2024,
+      "use": "Evidence that policy/action-value knowledge can be distilled from strong search; inspire a much smaller CPU policy prior, not a transformer runtime."
+    },
+    {
+      "title": "Mastering Chess with a Transformer Model",
+      "year": 2024,
+      "use": "Domain-specific chess representations can improve efficiency; use only as architectural inspiration for compact relational/search signals."
+    },
+    {
+      "title": "Evidence of Learned Look-Ahead in a Chess-Playing Neural Network",
+      "year": 2024,
+      "use": "Motivates policy representations that encode future-move structure; adapt only if a tiny CPU-compatible version can be validated."
+    }
+  ],
+  "staged_validation": [
+    "A: telemetry-only instrumentation; zero strength behavior change",
+    "B: deterministic search-instability estimator only",
+    "C: auxiliary-head inference in shadow mode",
+    "D: adaptive LMR only",
+    "E: add adaptive futility pruning",
+    "F: add adaptive null-move/verification and extensions",
+    "G: optional tiny move-ordering prior",
+    "H: combined controller with full ablation matrix"
+  ],
+  "performance_budget": {
+    "runtime_gpu_required": false,
+    "hot_path_dynamic_allocations": "none",
+    "initial_target_overhead_percent": "<=3% NPS for controller/head inference before demonstrated Elo compensation",
+    "failure_rule": "Any component with significant overhead but no reproducible strength benefit is removed."
+  },
+  "testing": {
+    "methodology": "Fishtest-style paired A/B",
+    "default_book": "UHO_Lichess_4852_v1.epd",
+    "threads": 1,
+    "hash_mb": 16,
+    "progression": [
+      "microbench/perft/bench correctness",
+      "small paired screen",
+      "larger normalized-SPRT confirmation",
+      "independent repeat for promising large changes",
+      "ablation tests for every controller component"
+    ]
+  },
+  "safeguards": [
+    "Do not mix modernization-only refactors with strength claims.",
+    "Do not replace alpha-beta with MCTS.",
+    "Do not require GPU during play.",
+    "Do not claim novelty until historical Stockfish and literature audit is complete.",
+    "Preserve GPL-3.0 obligations and Stockfish attribution."
+  ]
+}
