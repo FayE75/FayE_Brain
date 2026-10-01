@@ -1,7 +1,7 @@
 {
   "id": "FAYE-0006",
   "title": "Simplify futility-pruning mate guards",
-  "status": "screening",
+  "status": "confirmation",
   "mechanism": "search/futility-pruning simplification",
   "candidate_only": true,
   "source": "official-stockfish/Stockfish#7135",
@@ -18,10 +18,46 @@
     "hash_mb": 16,
     "build_arch": "x86-64-avx2"
   },
-  "promotion_rule": "Do not merge from this 400-game screen. If the result is not clearly adverse, run a larger fresh Fishtest-style confirmation; if flat/adverse, mark no-promotion and move to another mechanism.",
+  "promotion_rule": "Do not merge from the 400-game screen. Require a larger fresh normalized-SPRT confirmation; if the confirmation is positive but inconclusive, run an independent repeat before any merge. If adverse, mark no-promotion and move on.",
   "notes": [
     "One search condition change only.",
     "No NNUE architecture, relational feature, time-management, or TT changes.",
     "Because the change is functional and can alter the search tree, bench node equality and raw NPS are not used as a promotion criterion."
-  ]
+  ],
+  "screen": {
+    "workflow_run": 36821242608,
+    "book": "UHO_Lichess_4852_v1.epd",
+    "games": 400,
+    "paired_repeat": true,
+    "tc": "10+0.1",
+    "threads": 1,
+    "hash_mb": 16,
+    "wins": 102,
+    "draws": 208,
+    "losses": 90,
+    "score_percent": 51.5,
+    "descriptive_elo": 10.43,
+    "elo_95ci_half_width": 16.29,
+    "pentanomial": [
+      0,
+      40,
+      108,
+      52,
+      0
+    ],
+    "decision": "Advance to a larger fresh confirmation. The 400-game screen is positive but too imprecise to justify promotion."
+  },
+  "confirmation": {
+    "book": "UHO_Lichess_4852_v1.epd",
+    "max_games": 1200,
+    "paired_repeat": true,
+    "tc": "10+0.1",
+    "threads": 1,
+    "hash_mb": 16,
+    "mode": "normalized SPRT",
+    "elo0": 0,
+    "elo1": 2,
+    "alpha": 0.05,
+    "beta": 0.05
+  }
 }
