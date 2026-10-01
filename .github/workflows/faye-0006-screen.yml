@@ -48,7 +48,7 @@ jobs:
           p=Path('candidate/src/search.cpp')
           s=p.read_text()
           old='''    if (!ss->ttPv && depth < (seekMate ? 6 : 19) && eval >= beta && (!ttData.move || ttCapture)
-              && !is_loss(beta) && !is_win(eval))'''
+        && !is_loss(beta) && !is_win(eval))'''
           new='''    if (!ss->ttPv && depth < (seekMate ? 6 : 19) && eval >= beta && (!ttData.move || ttCapture))'''
           if s.count(old) != 1:
               raise SystemExit(f'futility guard pattern count={s.count(old)}; expected 1')
