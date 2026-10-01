@@ -46,14 +46,15 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           p=Path('candidate/src/search.cpp')
-          s=p.read_text()
-          old='''    if (!ss->ttPv && depth < (seekMate ? 6 : 19) && eval >= beta && (!ttData.move || ttCapture)
-        && !is_loss(beta) && !is_win(eval))'''
-          new='''    if (!ss->ttPv && depth < (seekMate ? 6 : 19) && eval >= beta && (!ttData.move || ttCapture))'''
-          if s.count(old) != 1:
-              raise SystemExit(f'futility guard pattern count={s.count(old)}; expected 1')
-          s=s.replace(old,new)
-          p.write_text(s)
+          lines=p.read_text().splitlines()
+          guard='        && !is_loss(beta) && !is_win(eval))'
+          hits=[i for i,line in enumerate(lines) if line == guard and i > 0 and 'depth < (seekMate ? 6 : 19)' in lines[i-1]]
+          if len(hits) != 1:
+              raise SystemExit(f'futility guard match count={len(hits)}; expected 1')
+          i=hits[0]
+          lines[i-1] += ')'
+          del lines[i]
+          p.write_text('\n'.join(lines)+'\n')
           PY
           git -C candidate diff --check
           git -C candidate diff -- src/search.cpp > results/faye-0006.patch
