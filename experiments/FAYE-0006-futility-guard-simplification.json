@@ -1,7 +1,7 @@
 {
   "id": "FAYE-0006",
   "title": "Simplify futility-pruning mate guards",
-  "status": "confirmation",
+  "status": "confirmation-repeat",
   "mechanism": "search/futility-pruning simplification",
   "candidate_only": true,
   "source": "official-stockfish/Stockfish#7135",
@@ -18,7 +18,7 @@
     "hash_mb": 16,
     "build_arch": "x86-64-avx2"
   },
-  "promotion_rule": "Do not merge from the 400-game screen. Require a larger fresh normalized-SPRT confirmation; if the confirmation is positive but inconclusive, run an independent repeat before any merge. If adverse, mark no-promotion and move on.",
+  "promotion_rule": "Do not merge from the 400-game screen or a single inconclusive 1200-game confirmation. Evaluate an independent 1200-game repeat together with the first confirmation. Promote only if the repeat remains non-adverse and the combined evidence is credibly positive; otherwise mark no-promotion and move on.",
   "notes": [
     "One search condition change only.",
     "No NNUE architecture, relational feature, time-management, or TT changes.",
@@ -48,6 +48,38 @@
     "decision": "Advance to a larger fresh confirmation. The 400-game screen is positive but too imprecise to justify promotion."
   },
   "confirmation": {
+    "workflow_run": 36832299256,
+    "book": "UHO_Lichess_4852_v1.epd",
+    "games": 1200,
+    "paired_repeat": true,
+    "tc": "10+0.1",
+    "threads": 1,
+    "hash_mb": 16,
+    "mode": "normalized SPRT",
+    "elo0": 0,
+    "elo1": 2,
+    "alpha": 0.05,
+    "beta": 0.05,
+    "wins": 301,
+    "draws": 611,
+    "losses": 288,
+    "score_percent": 50.5417,
+    "descriptive_elo": 3.76,
+    "elo_95ci_half_width": 9.71,
+    "pentanomial": [
+      2,
+      133,
+      316,
+      148,
+      1
+    ],
+    "llr": 0.13,
+    "llr_lower": -2.94,
+    "llr_upper": 2.94,
+    "sprt_decision": "inconclusive at 1200-game hosted-runner cap",
+    "decision": "Positive but SPRT-inconclusive; run one fresh independent 1200-game repeat confirmation before any promotion."
+  },
+  "repeat_confirmation": {
     "book": "UHO_Lichess_4852_v1.epd",
     "max_games": 1200,
     "paired_repeat": true,
@@ -58,6 +90,7 @@
     "elo0": 0,
     "elo1": 2,
     "alpha": 0.05,
-    "beta": 0.05
+    "beta": 0.05,
+    "seed": "fresh github.run_id"
   }
 }
