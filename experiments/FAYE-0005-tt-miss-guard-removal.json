@@ -1,13 +1,13 @@
 {
   "id": "FAYE-0005",
   "title": "Remove redundant TT miss guards in search",
-  "status": "confirmation-repeat",
+  "status": "no-promotion",
   "mechanism": "transposition-table/search CPU efficiency",
   "candidate_only": true,
   "source": "official-stockfish/Stockfish#6835",
   "upstream_head": "995fd5480e6bc852846f3f1cf878e5b3d60c04e4",
   "upstream_base": "133731f33166afcde7fb7a76c41e47c3cddcee8b",
-  "rationale": "Stockfish PR #6835 removes redundant ttHit-dependent reassignments after TT probe. It passed a large non-regression STC (645408 games, LLR 5.07; 164134 W / 164382 L / 316892 D) and is explicitly non-functional. FayE's current TT probe already returns Move::none() and VALUE_NONE on misses, while both main search and qsearch still re-guard those fields, so the core optimization remains directly applicable without changing NNUE features or search semantics.",
+  "rationale": "Stockfish PR #6835 removes redundant ttHit-dependent reassignments after TT probe. It passed a large non-regression STC and is explicitly non-functional. FayE's current TT probe safely initializes miss data, so the optimization was directly testable without changing NNUE features.",
   "screen": {
     "workflow_run": 36730487113,
     "book": "UHO_Lichess_4852_v1.epd",
@@ -26,8 +26,7 @@
     "parent_median_nps": 870443,
     "median_speedup_percent": 1.5267,
     "bench_nodes": 115769,
-    "functional_bench_identical": true,
-    "decision": "Advance to confirmation because strength was inconclusive while the non-functional patch showed a reproducible-looking +1.527% median NPS signal."
+    "functional_bench_identical": true
   },
   "confirmation": {
     "workflow_run": 36745239935,
@@ -48,17 +47,25 @@
     "score_percent": 50.9583,
     "descriptive_elo": 6.66,
     "elo_95ci_half_width": 8.94,
-    "los_percent": 92.79,
-    "pentanomial": [1, 110, 354, 135, 0],
+    "pentanomial": [
+      1,
+      110,
+      354,
+      135,
+      0
+    ],
     "llr": 0.27,
     "llr_lower": -2.94,
     "llr_upper": 2.94,
     "sprt_decision": "inconclusive at 1200-game hosted-runner cap",
-    "decision": "Run one fresh 1200-game paired repeat confirmation rather than merge or reject. The first confirmation is positive (+6.66 Elo, LOS 92.79%) but SPRT did not cross a boundary (LLR 0.27), and the hosted runner cannot safely extend one job much beyond this duration."
+    "candidate_median_nps": 870443,
+    "parent_median_nps": 863947,
+    "median_speedup_percent": 0.7519
   },
   "repeat_confirmation": {
+    "workflow_run": 36784239539,
     "book": "UHO_Lichess_4852_v1.epd",
-    "max_games": 1200,
+    "games": 1200,
     "paired_repeat": true,
     "tc": "10+0.1",
     "threads": 1,
@@ -68,13 +75,41 @@
     "elo1": 2,
     "alpha": 0.05,
     "beta": 0.05,
-    "seed": "fresh github.run_id"
+    "wins": 275,
+    "draws": 626,
+    "losses": 299,
+    "score_percent": 49,
+    "descriptive_elo": -6.95,
+    "elo_95ci_half_width": 9.38,
+    "pentanomial": [
+      3,
+      139,
+      338,
+      119,
+      1
+    ],
+    "llr": -0.31,
+    "llr_lower": -2.94,
+    "llr_upper": 2.94,
+    "sprt_decision": "inconclusive at 1200-game hosted-runner cap",
+    "candidate_median_nps": 863947,
+    "parent_median_nps": 863947,
+    "median_speedup_percent": 0
   },
-  "promotion_rule": "Do not merge from the screen or a single inconclusive confirmation. Evaluate the independent repeat together with the first confirmation; promote only if strength remains non-adverse and the efficiency signal remains credible. Otherwise mark no-promotion and move to another mechanism.",
+  "combined_confirmations": {
+    "games": 2400,
+    "wins": 596,
+    "draws": 1207,
+    "losses": 597,
+    "score_percent": 49.9792,
+    "descriptive_elo": -0.14,
+    "interpretation": "The two independent 1200-game confirmations cancel almost exactly in aggregate. The hosted-runner NPS signal also weakened from +0.752% in confirmation 1 to 0.000% in confirmation 2."
+  },
+  "decision": "no-promotion",
+  "decision_reason": "Do not merge FAYE-0005. The first confirmation was positive but the independent repeat reversed direction; together the 2400 confirmation games are essentially neutral, and the efficiency signal was not reproducible on the repeat. Move to a different isolated mechanism.",
   "notes": [
     "One mechanism only: remove redundant ttHit guards for move/value after probe in main search and qsearch.",
-    "FayE TT miss initialization was verified before creating the experiment.",
     "No NNUE architecture, relational feature, or time-management changes.",
-    "FAYE-0004 was no-promoted after a flat 400-game screen and 0.000% median NPS delta."
+    "Screen NPS +1.527%, confirmation-1 NPS +0.752%, repeat-confirmation NPS 0.000%."
   ]
 }

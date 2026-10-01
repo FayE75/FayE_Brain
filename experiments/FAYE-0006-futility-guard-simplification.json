@@ -1,0 +1,27 @@
+{
+  "id": "FAYE-0006",
+  "title": "Simplify futility-pruning mate guards",
+  "status": "screening",
+  "mechanism": "search/futility-pruning simplification",
+  "candidate_only": true,
+  "source": "official-stockfish/Stockfish#7135",
+  "upstream_head": "ab706cef421c97a0f9ccdce905e0728c034e640a",
+  "upstream_base": "1dc0912d86dafb99e96d679a6ac76cbdf1553459",
+  "rationale": "Stockfish PR #7135 removes !is_loss(beta) and !is_win(eval) from the child-node futility-pruning condition. The upstream PR reports passing non-regression STC (51,520 games) and LTC (140,778 games). FayE's current search.cpp still contains exactly these guards, so this is a small, isolated search change distinct from FAYE-0005.",
+  "protocol": {
+    "stage": "small paired strength screen",
+    "book": "UHO_Lichess_4852_v1.epd",
+    "games": 400,
+    "paired_repeat": true,
+    "tc": "10+0.1",
+    "threads": 1,
+    "hash_mb": 16,
+    "build_arch": "x86-64-avx2"
+  },
+  "promotion_rule": "Do not merge from this 400-game screen. If the result is not clearly adverse, run a larger fresh Fishtest-style confirmation; if flat/adverse, mark no-promotion and move to another mechanism.",
+  "notes": [
+    "One search condition change only.",
+    "No NNUE architecture, relational feature, time-management, or TT changes.",
+    "Because the change is functional and can alter the search tree, bench node equality and raw NPS are not used as a promotion criterion."
+  ]
+}
