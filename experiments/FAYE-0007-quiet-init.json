@@ -1,0 +1,22 @@
+{
+  "id": "FAYE-0007",
+  "title": "Remove redundant QUIET_INIT MovePicker stage",
+  "status": "screening",
+  "mechanism": "move-picker control-flow efficiency",
+  "source": "official-stockfish/Stockfish#7150",
+  "candidate_only": true,
+  "rationale": "FayE main still contains the redundant QUIET_INIT stage removed by upstream PR #7150. The patch removes one enum stage and the redundant stage increment/fallthrough without changing move generation or ordering semantics.",
+  "validation": {
+    "stage": "400-game paired screen",
+    "book": "UHO_Lichess_4852_v1.epd",
+    "tc": "10+0.1",
+    "threads": 1,
+    "hash_mb": 16,
+    "paired_repeat": true,
+    "games": 400,
+    "nps_repeats": 5,
+    "require_identical_bench_nodes": true
+  },
+  "promotion_rule": "Do not merge from this screen alone. Advance only if strength is non-adverse and any efficiency signal is credible/reproducible.",
+  "next": "After FAYE-0007 decision, stop prioritizing micro-patches and proceed to the separate modernization gate before FAYE-0008."
+}
