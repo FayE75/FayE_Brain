@@ -1,0 +1,25 @@
+{
+  "id": "FAYE-0006",
+  "title": "Remove redundant QUIET_INIT move-picker stage",
+  "status": "screen-planned",
+  "mechanism": "move-picker control-flow efficiency",
+  "candidate_only": true,
+  "source": "official-stockfish/Stockfish#7150",
+  "upstream_head": "940c39c2df1df289b8249d2eb88b1cb7b1cabccb",
+  "rationale": "Current FayE movepick.cpp still has the redundant QUIET_INIT stage. Stockfish PR #7150 removes only that stage transition and falls directly from exhausted GOOD_CAPTURE into quiet generation, with no intended functional change. This is isolated from prior TT/NNUE experiments and preserves sparse/incremental CPU behavior.",
+  "screen": {
+    "book": "UHO_Lichess_4852_v1.epd",
+    "games": 400,
+    "paired_repeat": true,
+    "tc": "10+0.1",
+    "threads": 1,
+    "hash_mb": 16,
+    "nps_repeats": 5
+  },
+  "promotion_rule": "Do not merge from the small screen. Require non-adverse strength plus credible repeatable efficiency before larger confirmation.",
+  "notes": [
+    "One mechanism only.",
+    "No NNUE architecture or relational-feature change.",
+    "Candidate-only branch experiment."
+  ]
+}
