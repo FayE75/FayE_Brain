@@ -1,7 +1,7 @@
 {
   "id": "FAYE-0008-v1",
   "title": "Multi-Signal Adaptive Search Controller v1",
-  "status": "prepared-for-parent-screen",
+  "status": "screen-running",
   "parent_branch": "modernization/pre-faye-0008-final",
   "parent_commit": "dce678ece3c89c07b0225ea17f781f7d2e215380",
   "runtime": "CPU-only",
@@ -58,7 +58,8 @@
     "sprt_elo1": 3,
     "require_perft": true,
     "bench_policy": "Bench nodes may change because this is a functional search change; benchmark determinism within each binary is still required.",
-    "nps_repeats": 5
+    "nps_repeats": 5,
+    "github_run_id": "36981746953"
   },
   "decision_policy": "This screen is exploratory. A positive screen is not enough for merge; require a larger independent confirmation and ablations showing which controller channels contribute.",
   "next_if_positive": "Run larger normalized-SPRT confirmation, then ablate LMR/futility/NMP/razoring channels independently before any promotion.",

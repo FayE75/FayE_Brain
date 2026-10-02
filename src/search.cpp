@@ -277,6 +277,8 @@ bool Search::Worker::iterative_deepening() {
 
     PVMoves pv;
 
+    adaptiveSearch.reset();
+
     RootPVMoves lastBestMovePV;
     Depth       lastBestMoveDepth = 0;
     Value       lastBestMoveScore = -VALUE_INFINITE;
@@ -520,6 +522,9 @@ bool Search::Worker::iterative_deepening() {
 
         if (!threads.stop)
         {
+            if (!rootMoves.empty() && !rootMoves[0].pv.empty())
+                adaptiveSearch.observe_root_iteration(rootMoves[0].pv[0], rootMoves[0].score);
+
             if (lastBestMovePV.empty() || lastBestMovePV[0] != rootMoves[0].pv[0])
                 lastBestMoveDepth = rootDepth;
 
@@ -876,6 +881,10 @@ Value Search::Worker::search(
     improving         = ss->staticEval > (ss - 2)->staticEval;
     opponentWorsening = ss->staticEval > -(ss - 1)->staticEval;
 
+    const SearchControl searchControl =
+      make_search_control(adaptiveSearch, ss->staticEval, eval, ttData.value, correctionValue, depth,
+                          improving, opponentWorsening, ss->ttHit, ss->ttPv);
+
     // Hindsight adjustment of reductions based on static evaluation difference
     if (priorReduction >= 3 && !opponentWorsening)
         depth++;
@@ -1005,7 +1014,7 @@ Value Search::Worker::search(
 
     // Step 8. Razoring
     // If eval is really low, skip search entirely and return the qsearch value
-    if (allNode && eval < alpha - 342 * depth && !seekMate)
+    if (allNode && eval < alpha - (342 * depth + searchControl.razorMarginDelta) && !seekMate)
         return qsearch<NonPV>(pos, ss, alpha, beta);
 
     // Step 9. Futility pruning: child node
@@ -1018,7 +1027,8 @@ Value Search::Worker::search(
 
         Value futilityMargin = futilityMult * depth
                              - (2789 * improving + 335 * opponentWorsening) * futilityMult / 1024
-                             + std::abs(correctionValue) / 198435;
+                             + std::abs(correctionValue) / 198435
+                             + searchControl.futilityMarginDelta;
 
         if (eval - futilityMargin >= beta)
             return (661 * beta + 363 * eval) / 1024;
@@ -1026,7 +1036,8 @@ Value Search::Worker::search(
 
     // Step 10. Null move search with verification search
     if (cutNode
-        && ss->staticEval + 50 * ss->priorNMPFailHigh >= beta - 13 * depth - 47 * improving + 365
+        && ss->staticEval + 50 * ss->priorNMPFailHigh
+             >= beta - 13 * depth - 47 * improving + 365 + searchControl.nullMoveThresholdDelta
         && !excludedMove && pos.non_pawn_material(us) && ss->ply >= nmpMinPly && beta >= -2000)
     {
         assert((ss - 1)->currentMove != Move::null());
@@ -1345,6 +1356,7 @@ moves_loop:  // When in check, search starts here
 
         r -= moveCount * 65;
         r -= std::abs(correctionValue) / 26310;
+        r += searchControl.lmrDelta;
 
         // Increase reduction for cut nodes
         if (cutNode)

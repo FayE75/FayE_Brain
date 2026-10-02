@@ -37,6 +37,7 @@
 #include "numa.h"
 #include "position.h"
 #include "score.h"
+#include "search_controller.h"
 #include "syzygy/tbprobe.h"
 #include "timeman.h"
 #include "types.h"
@@ -385,7 +386,8 @@ class Worker {
     Depth     rootDepth;
     Value     rootDelta;
 
-    PVMoves lastIterationIdxPV;
+    AdaptiveSearchState adaptiveSearch;
+    PVMoves             lastIterationIdxPV;
 
     usize                     threadIdx, numaThreadIdx, numaTotal;
     NumaReplicatedAccessToken numaAccessToken;
