@@ -1,0 +1,170 @@
+name: FAYE-0008 v2 Adaptive Search Parent Screen
+
+on:
+  push:
+    branches:
+      - experiment/faye-0008-adaptive-search-v2
+    paths:
+      - '.github/faye-0008-v2-trigger'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  PARENT_COMMIT: dce678ece3c89c07b0225ea17f781f7d2e215380
+  FASTCHESS_COMMIT: 60d7a7a26c6b0582a15c112fb29a1829bef2adb3
+  GAMES: '600'
+  ROUNDS: '300'
+  TC: '10+0.1'
+  THREADS: '1'
+  HASH_MB: '16'
+
+jobs:
+  screen:
+    runs-on: ubuntu-latest
+    timeout-minutes: 210
+    steps:
+      - name: Checkout FAYE-0008 v2 experiment branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential git curl python3
+
+      - name: Build isolated candidate and parent
+        run: |
+          set -euxo pipefail
+          git rev-parse HEAD
+          mkdir -p /tmp/faye-v2-candidate /tmp/faye-v2-parent
+          cp -a . /tmp/faye-v2-candidate/repo
+          git worktree add --detach /tmp/faye-v2-parent/repo "$PARENT_COMMIT"
+          make -C /tmp/faye-v2-candidate/repo/src -j2 build ARCH=x86-64-avx2
+          cp /tmp/faye-v2-candidate/repo/src/stockfish /tmp/faye-v2-candidate/FayE-v2
+          make -C /tmp/faye-v2-parent/repo/src -j2 build ARCH=x86-64-avx2
+          cp /tmp/faye-v2-parent/repo/src/stockfish /tmp/faye-v2-parent/Parent
+
+      - name: UCI and perft correctness gates
+        run: |
+          set -euxo pipefail
+          printf 'uci\nisready\nquit\n' | /tmp/faye-v2-candidate/FayE-v2 | tee /tmp/uci.txt
+          grep -q 'uciok' /tmp/uci.txt
+          grep -q 'readyok' /tmp/uci.txt
+          printf 'position startpos\ngo perft 5\nquit\n' | /tmp/faye-v2-candidate/FayE-v2 | tee /tmp/perft.txt
+          grep -q '4865609' /tmp/perft.txt
+
+      - name: Benchmark determinism and NPS guard
+        run: |
+          set -euxo pipefail
+          python3 - <<'PY'
+          import re, subprocess, statistics, sys
+          cand='/tmp/faye-v2-candidate/FayE-v2'
+          par='/tmp/faye-v2-parent/Parent'
+          def bench(path):
+              p=subprocess.run([path,'bench'],capture_output=True,text=True,timeout=300)
+              txt=p.stdout+'\n'+p.stderr
+              if p.returncode:
+                  print(txt); raise SystemExit(p.returncode)
+              m_nodes=re.findall(r'Nodes searched\s*:\s*(\d+)',txt)
+              m_nps=re.findall(r'Nodes/second\s*:\s*(\d+)',txt)
+              if not m_nodes or not m_nps:
+                  print(txt); raise SystemExit('Could not parse bench')
+              return int(m_nodes[-1]), int(m_nps[-1])
+          cn=[]; pn=[]; cns=[]; pns=[]
+          for _ in range(5):
+              n,s=bench(cand); cn.append(n); cns.append(s)
+              n,s=bench(par); pn.append(n); pns.append(s)
+          if len(set(cn))!=1 or len(set(pn))!=1:
+              raise SystemExit(f'Non-deterministic bench nodes candidate={cn} parent={pn}')
+          cm=statistics.median(cns); pm=statistics.median(pns)
+          ratio=(cm/pm-1.0)*100.0
+          print('candidate_nodes',cn[0],'parent_nodes',pn[0])
+          print('candidate_nps',cns,'median',cm)
+          print('parent_nps',pns,'median',pm)
+          print('nps_delta_percent',ratio)
+          if ratio < -3.0:
+              raise SystemExit(f'NPS regression {ratio:.2f}% below -3% guard')
+          PY
+
+      - name: Build pinned Fastchess
+        run: |
+          set -euxo pipefail
+          git clone https://github.com/Disservin/fastchess.git /tmp/fastchess
+          cd /tmp/fastchess
+          git checkout "$FASTCHESS_COMMIT"
+          make -j2
+
+      - name: Download Fishtest opening set
+        run: |
+          set -euxo pipefail
+          curl -L --fail --retry 3 -o /tmp/UHO_Lichess_4852_v1.epd \
+            https://raw.githubusercontent.com/official-stockfish/books/master/UHO_Lichess_4852_v1.epd
+          test -s /tmp/UHO_Lichess_4852_v1.epd
+
+      - name: Run 600-game paired parent screen
+        env:
+          SEED: ${{ github.run_id }}
+        run: |
+          set -euxo pipefail
+          /tmp/fastchess/fastchess \
+            -engine cmd=/tmp/faye-v2-candidate/FayE-v2 name=FAYE-0008-v2 option.Threads=$THREADS option.Hash=$HASH_MB \
+            -engine cmd=/tmp/faye-v2-parent/Parent name=Parent option.Threads=$THREADS option.Hash=$HASH_MB \
+            -each tc=$TC proto=uci \
+            -openings file=/tmp/UHO_Lichess_4852_v1.epd format=epd order=random \
+            -srand "$SEED" \
+            -rounds "$ROUNDS" \
+            -repeat \
+            -recover \
+            -pgnout /tmp/faye-0008-v2.pgn \
+            -ratinginterval 10 \
+            -scoreinterval 10 \
+            | tee /tmp/faye-0008-v2.log
+
+      - name: Summarize screen
+        run: |
+          set -euxo pipefail
+          python3 - <<'PY'
+          import re, json, math
+          txt=open('/tmp/faye-0008-v2.log',errors='ignore').read()
+          pats=re.findall(r'FAYE-0008-v2\s*:\s*(\d+)\s*-\s*(\d+)\s*-\s*(\d+)',txt)
+          if not pats:
+              pats=re.findall(r'FAYE-0008-v2.*?\b(\d+)\s+\b(\d+)\s+\b(\d+)',txt)
+          w=d=l=None
+          for m in pats:
+              a,b,c=map(int,m)
+              if a+b+c<=600 and a+b+c>0:
+                  w,d,l=a,b,c
+          # Fallback to PGN result count from candidate perspective.
+          if w is None:
+              pgn=open('/tmp/faye-0008-v2.pgn',errors='ignore').read()
+              games=re.split(r'(?=\[Event )',pgn)
+              w=d=l=0
+              for g in games:
+                  if '[Event ' not in g: continue
+                  white='FAYE-0008-v2' in re.search(r'\[White "([^"]+)"\]',g).group(1) if re.search(r'\[White "([^"]+)"\]',g) else False
+                  black='FAYE-0008-v2' in re.search(r'\[Black "([^"]+)"\]',g).group(1) if re.search(r'\[Black "([^"]+)"\]',g) else False
+                  rm=re.search(r'\[Result "([^"]+)"\]',g)
+                  if not rm: continue
+                  r=rm.group(1)
+                  if r=='1/2-1/2': d+=1
+                  elif (r=='1-0' and white) or (r=='0-1' and black): w+=1
+                  else: l+=1
+          n=w+d+l
+          score=(w+0.5*d)/n if n else 0
+          elo=400*math.log10(score/(1-score)) if 0<score<1 else 0
+          result={'games':n,'wins':w,'draws':d,'losses':l,'score_percent':100*score,'descriptive_elo':elo,'github_run_id':'${{ github.run_id }}'}
+          print(json.dumps(result,indent=2))
+          open('/tmp/faye-0008-v2-result.json','w').write(json.dumps(result,indent=2)+'\n')
+          PY
+
+      - name: Upload result
+        uses: actions/upload-artifact@v4
+        with:
+          name: faye-0008-v2-screen-${{ github.run_id }}
+          path: |
+            /tmp/faye-0008-v2-result.json
+            /tmp/faye-0008-v2.log
+            /tmp/faye-0008-v2.pgn
