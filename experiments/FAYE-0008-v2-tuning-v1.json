@@ -1,0 +1,57 @@
+{
+  "id": "FAYE-0008-v2-tuning-v1",
+  "title": "Conservative Adaptive Search Controller Calibration",
+  "status": "screening",
+  "runtime": "CPU-only",
+  "base": {
+    "model": "FAYE-0008-v2 promoted",
+    "main_promotion_source_sha": "e781a0f6c5e0b87679e0def5e2d50dc7153eee22"
+  },
+  "hypothesis": "The promoted v2 signal is useful, but narrowing the activation bands and reducing LMR/futility response amplitude should preserve useful deep-node adaptation while lowering overreaction and search overhead.",
+  "changes_from_promoted_v2": {
+    "controller_min_depth": 11,
+    "high_threshold": {
+      "from": 160,
+      "to": 168
+    },
+    "low_threshold": {
+      "from": 80,
+      "to": 72
+    },
+    "high_uncertainty_lmr": {
+      "from": "-224 - 2*excess",
+      "to": "-192 - excess"
+    },
+    "high_uncertainty_futility": {
+      "from": "12 + excess/4",
+      "to": "10 + excess/5"
+    },
+    "low_uncertainty_lmr": {
+      "from": "96 + confidence",
+      "to": "80 + confidence"
+    },
+    "low_uncertainty_futility": {
+      "from": "-6 - confidence/8",
+      "to": "-4 - confidence/10"
+    },
+    "null_move_pruning_delta": 0,
+    "razoring_delta": 0
+  },
+  "reference_policy": {
+    "opponent": "official-stockfish/Stockfish master",
+    "pinning": "Fetch master at workflow runtime and record exact SHA in artifacts.",
+    "future_rule": "All later FayE feature/tuning candidates start from the latest promoted FayE baseline and are screened against Stockfish latest, not against an old FayE parent."
+  },
+  "screen": {
+    "planned_games": 600,
+    "paired": true,
+    "rounds": 300,
+    "book": "UHO_Lichess_4852_v1.epd",
+    "tc": "10+0.1",
+    "threads_per_engine": 1,
+    "hash_mb": 16,
+    "concurrency": 2,
+    "fastchess_commit": "60d7a7a26c6b0582a15c112fb29a1829bef2adb3"
+  },
+  "promotion_policy": "Do not replace the promoted baseline from a small or incomplete match automatically. Use the Stockfish-latest screen as evidence, then confirm promising changes before the next promotion."
+}
