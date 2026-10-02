@@ -123,7 +123,7 @@ jobs:
             -rounds "$ROUNDS" \
             -repeat \
             -recover \
-            -pgnout /tmp/faye-0008-v2.pgn \
+            -pgnout file=/tmp/faye-0008-v2.pgn append=false \
             -ratinginterval 10 \
             -scoreinterval 10 \
             | tee /tmp/faye-0008-v2.log
