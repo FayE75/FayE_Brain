@@ -1,0 +1,93 @@
+name: Promote FAYE-0007 Maintenance Cleanup
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/faye-0007-promote-trigger"
+
+permissions:
+  contents: write
+
+jobs:
+  promote:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Apply FAYE-0007 and mark promoted
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+
+          src = Path('src/movepick.cpp')
+          text = src.read_text()
+
+          enum_old = '    GOOD_CAPTURE,\n    QUIET_INIT,\n    GOOD_QUIET,'
+          enum_new = '    GOOD_CAPTURE,\n    GOOD_QUIET,'
+          if text.count(enum_old) != 1:
+              raise SystemExit('Expected exactly one QUIET_INIT enum pattern')
+          text = text.replace(enum_old, enum_new, 1)
+
+          flow_old = '''        ++stage;\n        [[fallthrough]];\n\n    case QUIET_INIT :\n        if (!skipQuiets)'''
+          flow_new = '''        if (!skipQuiets)'''
+          if text.count(flow_old) != 1:
+              raise SystemExit('Expected exactly one QUIET_INIT control-flow pattern')
+          text = text.replace(flow_old, flow_new, 1)
+
+          if 'QUIET_INIT' in text:
+              raise SystemExit('QUIET_INIT still present after patch')
+          src.write_text(text)
+
+          manifest_path = Path('experiments/FAYE-0007-quiet-init.json')
+          data = json.loads(manifest_path.read_text())
+          data['status'] = 'promoted'
+          data['candidate_only'] = False
+          data['promotion_rule'] = (
+              'Adopted as a semantics-preserving maintenance cleanup rather than as a '
+              'strength gain; the flat 400-game screen is not evidence of Elo improvement.'
+          )
+          data['next'] = (
+              'Begin separate behavior-preserving whole-codebase modernization; do not '
+              'attribute modernization changes to Elo. After modernization correctness/'
+              'performance gates pass, proceed to FAYE-0008.'
+          )
+          result = data.setdefault('result', {})
+          result['decision'] = 'promoted'
+          result['rationale'] = (
+              'Promoted as a no-functional-change MovePicker cleanup. The paired strength '
+              'screen was essentially flat, so no strength improvement is claimed. '
+              'Identical functional bench nodes passed, and the adopted code change only '
+              'removes the redundant QUIET_INIT stage/control-flow step.'
+          )
+          data['promotion'] = {
+              'type': 'maintenance-cleanup',
+              'strength_claim': 'none',
+              'code_change': 'Remove redundant QUIET_INIT MovePicker stage and fallthrough increment.',
+              'basis': [
+                  '400-game paired screen was essentially flat',
+                  'functional bench-node equality passed',
+                  'upstream source patch is explicitly described as no functional change'
+              ]
+          }
+          manifest_path.write_text(json.dumps(data, indent=2) + '\n')
+          PY
+
+          git diff --check
+          git diff -- src/movepick.cpp experiments/FAYE-0007-quiet-init.json
+
+      - name: Commit promotion
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/movepick.cpp experiments/FAYE-0007-quiet-init.json
+          git commit -m "Promote FAYE-0007 maintenance cleanup"
+          git pull --rebase origin main
+          git push origin HEAD:main
