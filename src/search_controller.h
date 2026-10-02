@@ -149,10 +149,10 @@ make_search_control_deep(const AdaptiveSearchState& state,
                                                        bool                       ttHit,
                                                        bool                       ttPv) {
     // v2 keeps the node-heavy shallow and mid-depth tree exactly on parent policy.
-    // The controller now activates only from depth 10 upward. This preserves the
-    // adaptive architecture where evidence is more stable while sharply reducing
-    // controller invocations in the exponentially larger shallow subtree.
-    if (depth <= 9)
+    // The controller activates only from depth 11 upward. This preserves the
+    // adaptive architecture where evidence is more stable while keeping the
+    // controller outside the exponentially larger shallow subtree.
+    if (depth <= 10)
         return {};
 
     return make_search_control_deep(state, staticEval, effectiveEval, ttValue, correctionValue,
