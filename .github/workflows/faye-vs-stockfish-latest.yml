@@ -1,0 +1,210 @@
+name: FayE Candidate vs Stockfish Latest
+
+on:
+  push:
+    branches:
+      - 'experiment/**'
+    paths:
+      - '.github/faye-stockfish-latest-trigger'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  FASTCHESS_COMMIT: 60d7a7a26c6b0582a15c112fb29a1829bef2adb3
+  ROUNDS: '300'
+  TC: '10+0.1'
+  THREADS: '1'
+  HASH_MB: '16'
+  CONCURRENCY: '2'
+
+jobs:
+  match:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 355
+
+    steps:
+      - name: Checkout FayE candidate
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Install build tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends build-essential git curl python3
+
+      - name: Record candidate and fetch Stockfish latest
+        run: |
+          set -euo pipefail
+          git rev-parse HEAD | tee /tmp/faye-candidate.sha
+          git clone --depth 1 https://github.com/official-stockfish/Stockfish.git /tmp/stockfish-latest
+          git -C /tmp/stockfish-latest rev-parse HEAD | tee /tmp/stockfish-latest.sha
+          echo "FayE candidate: $(cat /tmp/faye-candidate.sha)"
+          echo "Stockfish latest: $(cat /tmp/stockfish-latest.sha)"
+
+      - name: Build FayE candidate and Stockfish latest
+        run: |
+          set -euo pipefail
+          make -C src -j2 build ARCH=x86-64-avx2
+          cp src/stockfish /tmp/FayE-Candidate
+          chmod +x /tmp/FayE-Candidate
+
+          make -C /tmp/stockfish-latest/src -j2 build ARCH=x86-64-avx2
+          cp /tmp/stockfish-latest/src/stockfish /tmp/Stockfish-Latest
+          chmod +x /tmp/Stockfish-Latest
+
+      - name: UCI and perft correctness gates
+        run: |
+          set -euo pipefail
+          for ENGINE in /tmp/FayE-Candidate /tmp/Stockfish-Latest; do
+            printf 'uci\nisready\nquit\n' | "$ENGINE" > /tmp/uci.txt
+            grep -q '^uciok$' /tmp/uci.txt
+            grep -q '^readyok$' /tmp/uci.txt
+            printf 'position startpos\ngo perft 5\nquit\n' | "$ENGINE" > /tmp/perft.txt
+            grep -Eq 'Nodes searched[^0-9]*4865609' /tmp/perft.txt
+          done
+
+      - name: Record comparative bench
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, re, statistics, subprocess
+
+          engines = {
+              'faye': '/tmp/FayE-Candidate',
+              'stockfish_latest': '/tmp/Stockfish-Latest',
+          }
+          result = {}
+          for name, path in engines.items():
+              nodes, nps = [], []
+              for _ in range(3):
+                  p = subprocess.run([path, 'bench'], capture_output=True, text=True, timeout=300)
+                  text = p.stdout + '\n' + p.stderr
+                  if p.returncode:
+                      raise SystemExit(text)
+                  mn = re.findall(r'Nodes searched\s*:\s*(\d+)', text)
+                  ms = re.findall(r'Nodes/second\s*:\s*(\d+)', text)
+                  if not mn or not ms:
+                      raise SystemExit(f'Could not parse bench for {name}')
+                  nodes.append(int(mn[-1]))
+                  nps.append(int(ms[-1]))
+              result[name] = {
+                  'nodes': nodes,
+                  'nps': nps,
+                  'median_nps': statistics.median(nps),
+              }
+          print(json.dumps(result, indent=2))
+          open('/tmp/bench.json', 'w').write(json.dumps(result, indent=2) + '\n')
+          PY
+
+      - name: Build pinned Fastchess
+        run: |
+          set -euo pipefail
+          git clone https://github.com/Disservin/fastchess.git /tmp/fastchess
+          git -C /tmp/fastchess checkout "$FASTCHESS_COMMIT"
+          make -C /tmp/fastchess -j2
+
+      - name: Download Fishtest opening set
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 3 -o /tmp/UHO_Lichess_4852_v1.epd.zip \
+            https://raw.githubusercontent.com/official-stockfish/books/master/UHO_Lichess_4852_v1.epd.zip
+          mkdir -p /tmp/uho-book
+          python3 -m zipfile -e /tmp/UHO_Lichess_4852_v1.epd.zip /tmp/uho-book
+          BOOK="$(find /tmp/uho-book -type f -name 'UHO_Lichess_4852_v1.epd' -print -quit)"
+          test -n "$BOOK"
+          cp "$BOOK" /tmp/UHO_Lichess_4852_v1.epd
+          test -s /tmp/UHO_Lichess_4852_v1.epd
+
+      - name: Run 600-game paired match
+        env:
+          SEED: ${{ github.run_id }}
+        run: |
+          set -o pipefail
+          /tmp/fastchess/fastchess \
+            -engine cmd=/tmp/FayE-Candidate name=FayE-Candidate option.Threads=$THREADS option.Hash=$HASH_MB \
+            -engine cmd=/tmp/Stockfish-Latest name=Stockfish-Latest option.Threads=$THREADS option.Hash=$HASH_MB \
+            -each tc=$TC proto=uci \
+            -openings file=/tmp/UHO_Lichess_4852_v1.epd format=epd order=random \
+            -srand "$SEED" \
+            -rounds "$ROUNDS" \
+            -repeat \
+            -concurrency "$CONCURRENCY" \
+            -recover \
+            -pgnout file=/tmp/faye-vs-stockfish-latest.pgn append=false \
+            -ratinginterval 20 \
+            -scoreinterval 20 \
+            | tee /tmp/faye-vs-stockfish-latest.log
+
+      - name: Summarize result
+        if: always()
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json, math, re
+
+          log_path = Path('/tmp/faye-vs-stockfish-latest.log')
+          txt = log_path.read_text(errors='ignore') if log_path.exists() else ''
+
+          stats = re.findall(
+              r'Games:\s*(\d+),\s*Wins:\s*(\d+),\s*Losses:\s*(\d+),\s*Draws:\s*(\d+),\s*Points:\s*([0-9.]+)\s*\(([0-9.]+)\s*%\)',
+              txt,
+          )
+          games = wins = losses = draws = 0
+          score_percent = 0.0
+          if stats:
+              g, w, l, d, _, pct = stats[-1]
+              games, wins, losses, draws = map(int, (g, w, l, d))
+              score_percent = float(pct)
+
+          elo_matches = re.findall(r'Elo:\s*([-+0-9.]+)\s*\+/-\s*([0-9.]+),\s*nElo:\s*([-+0-9.]+)\s*\+/-\s*([0-9.]+)', txt)
+          los_matches = re.findall(r'LOS:\s*([0-9.]+)\s*%', txt)
+          penta_matches = re.findall(r'Ptnml\(0-2\):\s*\[([^\]]+)\]', txt)
+
+          descriptive_elo = None
+          if games and 0.0 < score_percent < 100.0:
+              s = score_percent / 100.0
+              descriptive_elo = 400.0 * math.log10(s / (1.0 - s))
+
+          result = {
+              'candidate_sha': Path('/tmp/faye-candidate.sha').read_text().strip() if Path('/tmp/faye-candidate.sha').exists() else None,
+              'stockfish_latest_sha': Path('/tmp/stockfish-latest.sha').read_text().strip() if Path('/tmp/stockfish-latest.sha').exists() else None,
+              'github_run_id': '${{ github.run_id }}',
+              'games_completed': games,
+              'wins': wins,
+              'draws': draws,
+              'losses': losses,
+              'score_percent': score_percent,
+              'descriptive_elo_from_score': descriptive_elo,
+              'fastchess_elo': float(elo_matches[-1][0]) if elo_matches else None,
+              'fastchess_elo_95ci_half_width': float(elo_matches[-1][1]) if elo_matches else None,
+              'fastchess_nelo': float(elo_matches[-1][2]) if elo_matches else None,
+              'fastchess_nelo_95ci_half_width': float(elo_matches[-1][3]) if elo_matches else None,
+              'los_percent': float(los_matches[-1]) if los_matches else None,
+              'pentanomial_0_2': [int(x.strip()) for x in penta_matches[-1].split(',')] if penta_matches else None,
+              'tc': '${{ env.TC }}',
+              'threads_per_engine': int('${{ env.THREADS }}'),
+              'hash_mb': int('${{ env.HASH_MB }}'),
+              'concurrency': int('${{ env.CONCURRENCY }}'),
+              'opening_book': 'UHO_Lichess_4852_v1.epd',
+          }
+          print(json.dumps(result, indent=2))
+          Path('/tmp/faye-vs-stockfish-latest-result.json').write_text(json.dumps(result, indent=2) + '\n')
+          PY
+
+      - name: Upload match artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: faye-vs-stockfish-latest-${{ github.run_id }}
+          if-no-files-found: warn
+          path: |
+            /tmp/faye-vs-stockfish-latest-result.json
+            /tmp/faye-vs-stockfish-latest.log
+            /tmp/faye-vs-stockfish-latest.pgn
+            /tmp/faye-candidate.sha
+            /tmp/stockfish-latest.sha
+            /tmp/bench.json
