@@ -117,22 +117,23 @@ make_search_control_deep(const AdaptiveSearchState& state,
 
     uncertainty = std::clamp(uncertainty, 0, 256);
 
-    // Smoother, smaller response than v1. Only LMR and child-node futility are
-    // controlled in this stage. NMP and razoring remain exactly at parent policy.
-    constexpr int HighThreshold = 160;
-    constexpr int LowThreshold  = 80;
+    // Tuning v1 narrows both activation bands and reduces response amplitude.
+    // The goal is to keep the promoted v2 architecture while changing parent-like
+    // search only when uncertainty/confidence evidence is stronger.
+    constexpr int HighThreshold = 168;
+    constexpr int LowThreshold  = 72;
 
     if (uncertainty >= HighThreshold)
     {
         const int excess        = uncertainty - HighThreshold;
-        out.lmrDelta            = static_cast<std::int16_t>(-224 - 2 * excess);
-        out.futilityMarginDelta = static_cast<std::int16_t>(12 + excess / 4);
+        out.lmrDelta            = static_cast<std::int16_t>(-192 - excess);
+        out.futilityMarginDelta = static_cast<std::int16_t>(10 + excess / 5);
     }
     else if (uncertainty <= LowThreshold)
     {
         const int confidence    = LowThreshold - uncertainty;
-        out.lmrDelta            = static_cast<std::int16_t>(96 + confidence);
-        out.futilityMarginDelta = static_cast<std::int16_t>(-6 - confidence / 8);
+        out.lmrDelta            = static_cast<std::int16_t>(80 + confidence);
+        out.futilityMarginDelta = static_cast<std::int16_t>(-4 - confidence / 10);
     }
 
     return out;
@@ -148,10 +149,8 @@ make_search_control_deep(const AdaptiveSearchState& state,
                                                        bool                       opponentWorsening,
                                                        bool                       ttHit,
                                                        bool                       ttPv) {
-    // v2 keeps the node-heavy shallow and mid-depth tree exactly on parent policy.
-    // The controller activates only from depth 11 upward. This preserves the
-    // adaptive architecture where evidence is more stable while keeping the
-    // controller outside the exponentially larger shallow subtree.
+    // Keep the node-heavy shallow and mid-depth tree exactly on promoted v2 policy.
+    // The controller activates only from depth 11 upward.
     if (depth <= 10)
         return {};
 
