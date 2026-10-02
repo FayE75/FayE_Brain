@@ -100,8 +100,13 @@ jobs:
       - name: Download Fishtest opening set
         run: |
           set -euxo pipefail
-          curl -L --fail --retry 3 -o /tmp/UHO_Lichess_4852_v1.epd \
-            https://raw.githubusercontent.com/official-stockfish/books/master/UHO_Lichess_4852_v1.epd
+          curl -L --fail --retry 3 -o /tmp/UHO_Lichess_4852_v1.epd.zip \
+            https://raw.githubusercontent.com/official-stockfish/books/master/UHO_Lichess_4852_v1.epd.zip
+          mkdir -p /tmp/uho-book
+          python3 -m zipfile -e /tmp/UHO_Lichess_4852_v1.epd.zip /tmp/uho-book
+          BOOK="$(find /tmp/uho-book -type f -name 'UHO_Lichess_4852_v1.epd' -print -quit)"
+          test -n "$BOOK"
+          cp "$BOOK" /tmp/UHO_Lichess_4852_v1.epd
           test -s /tmp/UHO_Lichess_4852_v1.epd
 
       - name: Run 600-game paired parent screen
