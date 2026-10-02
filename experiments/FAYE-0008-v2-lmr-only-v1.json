@@ -1,0 +1,16 @@
+{
+  "id": "FAYE-0008-v2-lmr-only-v1",
+  "base": "promoted FAYE-0008-v2",
+  "purpose": "Diagnostic channel ablation after conservative tuning-v1 regressed against the same Stockfish latest baseline.",
+  "change": "Keep promoted v2 uncertainty signal and LMR response; disable adaptive futility-margin deltas only.",
+  "comparison": "official-stockfish/Stockfish master fetched at run start",
+  "protocol": {
+    "games": 600,
+    "paired": true,
+    "book": "UHO_Lichess_4852_v1.epd",
+    "tc": "10+0.1",
+    "threads": 1,
+    "hash_mb": 16
+  },
+  "decision": "Prepared branch; source edit still required before triggering."
+}
