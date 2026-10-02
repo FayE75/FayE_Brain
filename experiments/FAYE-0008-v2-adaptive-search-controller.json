@@ -1,0 +1,45 @@
+{
+  "id": "FAYE-0008-v2",
+  "title": "Multi-Signal Adaptive Search Controller v2",
+  "status": "prepared-for-parent-screen",
+  "parent_branch": "modernization/pre-faye-0008-final",
+  "parent_commit": "dce678ece3c89c07b0225ea17f781f7d2e215380",
+  "runtime": "CPU-only",
+  "scale": "major-search-architecture-experiment",
+  "inherits_from": "FAYE-0008-v1",
+  "v1_result": {
+    "games": 600,
+    "wins": 153,
+    "draws": 283,
+    "losses": 164,
+    "score_percent": 49.08,
+    "descriptive_elo": -6.37,
+    "elo_95ci_half_width": 13.66,
+    "decision": "no-promotion"
+  },
+  "v2_changes": [
+    "Keep the unified uncertainty architecture but make it ablation-friendly.",
+    "Use controller output only for LMR and child-node futility in v2.",
+    "Return null-move pruning and razoring to parent behavior.",
+    "Reduce root-volatility and root-churn contribution to uncertainty.",
+    "Reduce LMR amplitude by roughly half versus v1.",
+    "Reduce futility-margin amplitude versus v1.",
+    "Disable controller adjustments at very shallow depth.",
+    "Use smoother thresholds so low/high confidence effects are less abrupt."
+  ],
+  "screen": {
+    "games": 600,
+    "paired": true,
+    "rounds": 300,
+    "book": "UHO_Lichess_4852_v1.epd",
+    "tc": "10+0.1",
+    "threads": 1,
+    "hash_mb": 16,
+    "fastchess_commit": "60d7a7a26c6b0582a15c112fb29a1829bef2adb3",
+    "sprt_elo0": 0,
+    "sprt_elo1": 3,
+    "require_perft": true,
+    "nps_repeats": 5
+  },
+  "decision_policy": "Exploratory screen. If positive/non-adverse, continue with larger confirmation and channel ablations. If negative, iterate v3 using measured channel behavior rather than abandoning the architecture."
+}
