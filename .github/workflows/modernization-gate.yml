@@ -1,0 +1,165 @@
+name: Pre-FAYE-0008 Modernization Gate
+
+on:
+  push:
+    branches:
+      - modernization/pre-faye-0008-final
+  workflow_dispatch:
+
+concurrency:
+  group: modernization-pre-faye-0008-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compiler-matrix:
+    name: Build ${{ matrix.compiler }} / ${{ matrix.arch }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [gcc, clang]
+        arch: [x86-64, x86-64-avx2]
+    steps:
+      - name: Checkout modernization branch
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Install toolchains
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends g++ clang make
+
+      - name: Build
+        run: |
+          set -euo pipefail
+          make -C src clean
+          make -C src -j"$(nproc)" build ARCH="${{ matrix.arch }}" COMP="${{ matrix.compiler }}"
+
+      - name: UCI smoke test
+        run: |
+          set -euo pipefail
+          printf 'uci\nisready\nquit\n' | ./src/stockfish | tee /tmp/uci.txt
+          grep -q '^uciok$' /tmp/uci.txt
+          grep -q '^readyok$' /tmp/uci.txt
+
+      - name: Start-position perft invariant
+        run: |
+          set -euo pipefail
+          printf 'position startpos\ngo perft 5\nquit\n' | ./src/stockfish | tee /tmp/perft.txt
+          grep -Eq 'Nodes searched[^0-9]*4865609' /tmp/perft.txt
+
+      - name: Functional bench determinism
+        run: |
+          set -euo pipefail
+          ./src/stockfish bench 16 1 8 default depth > /tmp/bench1.txt 2>&1
+          ./src/stockfish bench 16 1 8 default depth > /tmp/bench2.txt 2>&1
+          N1=$(awk '/Nodes searched/ {v=$NF} END {print v}' /tmp/bench1.txt)
+          N2=$(awk '/Nodes searched/ {v=$NF} END {print v}' /tmp/bench2.txt)
+          test -n "$N1" && test -n "$N2"
+          test "$N1" = "$N2"
+          echo "Bench nodes: $N1"
+
+  sanitizers:
+    name: Clang ASan + UBSan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout modernization branch
+        uses: actions/checkout@v5
+
+      - name: Install Clang
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends clang make
+
+      - name: Build sanitizer binary
+        run: |
+          set -euo pipefail
+          make -C src clean
+          make -C src -j"$(nproc)" build ARCH=x86-64 COMP=clang debug=yes sanitize="address undefined"
+
+      - name: Sanitizer smoke and perft
+        env:
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: |
+          set -euo pipefail
+          printf 'uci\nisready\nposition startpos\ngo perft 4\nquit\n' | ./src/stockfish | tee /tmp/sanitizer.txt
+          grep -q '^uciok$' /tmp/sanitizer.txt
+          grep -q '^readyok$' /tmp/sanitizer.txt
+          grep -Eq 'Nodes searched[^0-9]*197281' /tmp/sanitizer.txt
+
+  parent-parity:
+    name: Main parity and NPS regression guard
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout modernization branch
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Install compiler
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends g++ make python3
+
+      - name: Build modernization candidate
+        run: |
+          set -euo pipefail
+          make -C src clean
+          make -C src -j"$(nproc)" build ARCH=x86-64-avx2 COMP=gcc
+          cp src/stockfish /tmp/faye-candidate
+          chmod +x /tmp/faye-candidate
+
+      - name: Build main parent
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          git worktree add --detach /tmp/faye-main origin/main
+          make -C /tmp/faye-main/src clean
+          make -C /tmp/faye-main/src -j"$(nproc)" build ARCH=x86-64-avx2 COMP=gcc
+          cp /tmp/faye-main/src/stockfish /tmp/faye-parent
+          chmod +x /tmp/faye-parent
+
+      - name: Compare functional bench and median NPS
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/modernization-bench
+          for i in 1 2 3 4 5; do
+            /tmp/faye-parent bench 16 1 8 default depth > "/tmp/modernization-bench/parent-${i}.txt" 2>&1
+            /tmp/faye-candidate bench 16 1 8 default depth > "/tmp/modernization-bench/candidate-${i}.txt" 2>&1
+          done
+          python3 - <<'PY'
+          from pathlib import Path
+          import re, statistics
+
+          root = Path('/tmp/modernization-bench')
+          def read(prefix):
+              nodes, nps = [], []
+              for p in sorted(root.glob(f'{prefix}-*.txt')):
+                  t = p.read_text(errors='replace')
+                  mn = re.search(r'Nodes searched\s*:\s*(\d+)', t)
+                  ms = re.search(r'Nodes/second\s*:\s*(\d+)', t)
+                  if not mn or not ms:
+                      raise SystemExit(f'Cannot parse {p}')
+                  nodes.append(int(mn.group(1)))
+                  nps.append(int(ms.group(1)))
+              return nodes, nps
+
+          pn, ps = read('parent')
+          cn, cs = read('candidate')
+          if len(set(pn + cn)) != 1:
+              raise SystemExit(f'Functional bench mismatch: parent={pn}, candidate={cn}')
+          pm = statistics.median(ps)
+          cm = statistics.median(cs)
+          delta = (cm / pm - 1.0) * 100.0
+          print(f'Bench nodes: {pn[0]}')
+          print(f'Parent median NPS: {pm:,.0f}')
+          print(f'Candidate median NPS: {cm:,.0f}')
+          print(f'Median NPS delta: {delta:+.3f}%')
+          if delta < -3.0:
+              raise SystemExit(f'NPS regression {delta:.3f}% exceeds -3.0% modernization gate')
+          PY
