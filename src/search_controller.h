@@ -148,10 +148,11 @@ make_search_control_deep(const AdaptiveSearchState& state,
                                                        bool                       opponentWorsening,
                                                        bool                       ttHit,
                                                        bool                       ttPv) {
-    // v2 keeps the node-heavy shallow/mid-shallow tree exactly on parent policy.
-    // The common path is intentionally only this cheap depth test plus a zero result;
-    // the multi-signal calculation is isolated in a noinline cold helper.
-    if (depth <= 6)
+    // v2 keeps the node-heavy shallow and mid-depth tree exactly on parent policy.
+    // The controller now activates only from depth 10 upward. This preserves the
+    // adaptive architecture where evidence is more stable while sharply reducing
+    // controller invocations in the exponentially larger shallow subtree.
+    if (depth <= 9)
         return {};
 
     return make_search_control_deep(state, staticEval, effectiveEval, ttValue, correctionValue,
