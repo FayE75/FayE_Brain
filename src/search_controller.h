@@ -13,6 +13,17 @@
 
 namespace Stockfish::Search {
 
+#if defined(_MSC_VER)
+    #define FAYE_NOINLINE __declspec(noinline)
+    #define FAYE_COLD
+#elif defined(__GNUC__) || defined(__clang__)
+    #define FAYE_NOINLINE __attribute__((noinline))
+    #define FAYE_COLD __attribute__((cold))
+#else
+    #define FAYE_NOINLINE
+    #define FAYE_COLD
+#endif
+
 // Lightweight state carried by each search worker. It deliberately uses only
 // signals already produced by alpha-beta search, so the runtime path performs
 // no dynamic allocation and requires no second network or GPU.
@@ -64,25 +75,19 @@ struct SearchControl {
     int razorMarginDelta       = 0;  // v2: deliberately disabled
 };
 
-[[nodiscard]] inline SearchControl make_search_control(const AdaptiveSearchState& state,
-                                                       Value                      staticEval,
-                                                       Value                      effectiveEval,
-                                                       Value                      ttValue,
-                                                       int                        correctionValue,
-                                                       Depth                      depth,
-                                                       bool                       improving,
-                                                       bool                       opponentWorsening,
-                                                       bool                       ttHit,
-                                                       bool                       ttPv) {
+// Keep the expensive multi-signal calculation out of the alpha-beta hot path.
+// This helper is reached only for sufficiently deep nodes through the tiny wrapper below.
+[[nodiscard]] FAYE_NOINLINE FAYE_COLD SearchControl
+make_search_control_deep(const AdaptiveSearchState& state,
+                         Value                      staticEval,
+                         Value                      effectiveEval,
+                         Value                      ttValue,
+                         int                        correctionValue,
+                         bool                       improving,
+                         bool                       opponentWorsening,
+                         bool                       ttHit,
+                         bool                       ttPv) {
     SearchControl out;
-
-    // v2 is intentionally conservative in the node-heavy shallow/mid-shallow tree.
-    // Keeping depths <= 6 on the parent policy both reduces controller overhead and
-    // avoids steering highly tuned shallow selective-search decisions with noisy data.
-    // The adaptive architecture remains active from depth 7 upward, where the local
-    // evidence is more meaningful and the node population is much smaller.
-    if (depth <= 6)
-        return out;
 
     // v2 reduces the global/root contribution and lets local disagreement dominate.
     int uncertainty = state.rootVolatility / 4 + state.rootChurn / 8;
@@ -128,6 +133,29 @@ struct SearchControl {
 
     return out;
 }
+
+[[nodiscard]] inline SearchControl make_search_control(const AdaptiveSearchState& state,
+                                                       Value                      staticEval,
+                                                       Value                      effectiveEval,
+                                                       Value                      ttValue,
+                                                       int                        correctionValue,
+                                                       Depth                      depth,
+                                                       bool                       improving,
+                                                       bool                       opponentWorsening,
+                                                       bool                       ttHit,
+                                                       bool                       ttPv) {
+    // v2 keeps the node-heavy shallow/mid-shallow tree exactly on parent policy.
+    // The common path is intentionally only this cheap depth test plus a zero result;
+    // the multi-signal calculation is isolated in a noinline cold helper.
+    if (depth <= 6)
+        return {};
+
+    return make_search_control_deep(state, staticEval, effectiveEval, ttValue, correctionValue,
+                                    improving, opponentWorsening, ttHit, ttPv);
+}
+
+#undef FAYE_NOINLINE
+#undef FAYE_COLD
 
 }  // namespace Stockfish::Search
 
