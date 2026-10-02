@@ -1,0 +1,36 @@
+{
+  "id": "MODERNIZATION-PRE-FAYE-0008",
+  "status": "active",
+  "branch": "modernization/pre-faye-0008-final",
+  "base": "main after FAYE-0007 promotion",
+  "purpose": "Behavior-preserving whole-codebase modernization gate before FAYE-0008; no Elo claim.",
+  "invariants": [
+    "Preserve engine/search behavior",
+    "Preserve GPL-3.0 and Stockfish attribution",
+    "CPU-only broad portability",
+    "No hot-path dynamic allocation",
+    "Preserve vectorized NNUE paths and network format compatibility",
+    "Do not mix FAYE-0008 strength mechanisms into this branch"
+  ],
+  "workstreams": [
+    "repository/CI/toolchain audit",
+    "compiler matrix and sanitizer coverage",
+    "perft/bench determinism and UCI smoke coverage",
+    "typed search/control plumbing scaffolding without behavior changes",
+    "const-correctness and ownership/RAII cleanup",
+    "compile-time checks and module-boundary cleanup",
+    "NPS regression gate"
+  ],
+  "acceptance": [
+    "startpos perft equality",
+    "functional bench-node equality",
+    "NNUE-format compatibility",
+    "GCC and Clang builds pass",
+    "ASan/UBSan gate passes",
+    "UCI smoke test passes",
+    "no material NPS regression"
+  ],
+  "cxx_standard_rule": "Keep the current language standard unless the tested compiler/platform matrix demonstrates a clear portability-safe benefit from raising it.",
+  "faye_0007": "Already promoted on main as a semantics-preserving maintenance cleanup; modernization starts from that baseline.",
+  "next": "After this gate passes, branch FAYE-0008 staged telemetry and architecture work from the validated modernized baseline."
+}
