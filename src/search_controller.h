@@ -7,6 +7,7 @@
 #define FAYE_SEARCH_CONTROLLER_H_INCLUDED
 
 #include <algorithm>
+#include <cstdint>
 #include <cstdlib>
 
 #include "types.h"
@@ -64,16 +65,18 @@ struct AdaptiveSearchState {
     }
 };
 
-// Positive LMR delta means more reduction. Positive futility margin delta makes
-// child-node futility pruning more conservative. v2 intentionally leaves NMP
-// and razoring at parent behavior so the first ablation is diagnosable.
+// v2 keeps the return payload register-sized. The old v1 SearchControl carried
+// five 32-bit fields (20 bytes), including an exported uncertainty value that
+// search.cpp never consumed. Four signed 16-bit deltas are sufficient for all
+// v2 ranges and preserve the existing integration points for disabled NMP/razoring.
 struct SearchControl {
-    int uncertainty            = 0;  // [0, 256]
-    int lmrDelta               = 0;  // reduction units, where ~1024 ~= one ply
-    int futilityMarginDelta    = 0;  // centipawn-like Value units
-    int nullMoveThresholdDelta = 0;  // v2: deliberately disabled
-    int razorMarginDelta       = 0;  // v2: deliberately disabled
+    std::int16_t lmrDelta               = 0;  // reduction units, ~1024 ~= one ply
+    std::int16_t futilityMarginDelta    = 0;  // centipawn-like Value units
+    std::int16_t nullMoveThresholdDelta = 0;  // v2: deliberately disabled
+    std::int16_t razorMarginDelta       = 0;  // v2: deliberately disabled
 };
+
+static_assert(sizeof(SearchControl) == 8, "FAYE-0008 v2 SearchControl must stay register-sized");
 
 // Keep the expensive multi-signal calculation out of the alpha-beta hot path.
 // This helper is reached only for sufficiently deep nodes through the tiny wrapper below.
@@ -112,8 +115,7 @@ make_search_control_deep(const AdaptiveSearchState& state,
     if (ttPv)
         uncertainty -= 8;
 
-    uncertainty     = std::clamp(uncertainty, 0, 256);
-    out.uncertainty = uncertainty;
+    uncertainty = std::clamp(uncertainty, 0, 256);
 
     // Smoother, smaller response than v1. Only LMR and child-node futility are
     // controlled in this stage. NMP and razoring remain exactly at parent policy.
@@ -123,14 +125,14 @@ make_search_control_deep(const AdaptiveSearchState& state,
     if (uncertainty >= HighThreshold)
     {
         const int excess        = uncertainty - HighThreshold;
-        out.lmrDelta            = -224 - 2 * excess;
-        out.futilityMarginDelta = 12 + excess / 4;
+        out.lmrDelta            = static_cast<std::int16_t>(-224 - 2 * excess);
+        out.futilityMarginDelta = static_cast<std::int16_t>(12 + excess / 4);
     }
     else if (uncertainty <= LowThreshold)
     {
         const int confidence    = LowThreshold - uncertainty;
-        out.lmrDelta            = 96 + confidence;
-        out.futilityMarginDelta = -6 - confidence / 8;
+        out.lmrDelta            = static_cast<std::int16_t>(96 + confidence);
+        out.futilityMarginDelta = static_cast<std::int16_t>(-6 - confidence / 8);
     }
 
     return out;
