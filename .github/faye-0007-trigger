@@ -1,0 +1,4 @@
+FAYE-0007 MovePicker QUIET_INIT screen
+Started after FAYE-0006 no-promotion decision
+Source: official-stockfish/Stockfish#7150
+Protocol: 400 paired games + 5x bench NPS, identical bench nodes required
