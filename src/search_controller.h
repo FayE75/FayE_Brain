@@ -76,9 +76,12 @@ struct SearchControl {
                                                        bool                       ttPv) {
     SearchControl out;
 
-    // Do not perturb very shallow selective-search decisions. At these depths the
-    // parent heuristics are already highly tuned and the uncertainty samples are noisy.
-    if (depth <= 3)
+    // v2 is intentionally conservative in the node-heavy shallow/mid-shallow tree.
+    // Keeping depths <= 6 on the parent policy both reduces controller overhead and
+    // avoids steering highly tuned shallow selective-search decisions with noisy data.
+    // The adaptive architecture remains active from depth 7 upward, where the local
+    // evidence is more meaningful and the node population is much smaller.
+    if (depth <= 6)
         return out;
 
     // v2 reduces the global/root contribution and lets local disagreement dominate.
@@ -102,7 +105,7 @@ struct SearchControl {
     if (ttPv)
         uncertainty -= 8;
 
-    uncertainty    = std::clamp(uncertainty, 0, 256);
+    uncertainty     = std::clamp(uncertainty, 0, 256);
     out.uncertainty = uncertainty;
 
     // Smoother, smaller response than v1. Only LMR and child-node futility are
