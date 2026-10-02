@@ -1,0 +1,218 @@
+name: FAYE-0008 v1 Adaptive Search Parent Screen
+
+on:
+  push:
+    branches:
+      - experiment/faye-0008-adaptive-search-v1
+    paths:
+      - ".github/faye-0008-v1-trigger"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: faye-0008-v1-screen
+  cancel-in-progress: false
+
+jobs:
+  screen:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350
+    env:
+      PARENT_SHA: dce678ece3c89c07b0225ea17f781f7d2e215380
+      FASTCHESS_SHA: 60d7a7a26c6b0582a15c112fb29a1829bef2adb3
+      BUILD_ARCH: x86-64-avx2
+      TC: 10+0.1
+      HASH_MB: '16'
+      THREADS: '1'
+      CONCURRENCY: '2'
+      GAMES: '600'
+
+    steps:
+      - name: Checkout FAYE-0008 experiment branch
+        uses: actions/checkout@v5
+        with:
+          ref: experiment/faye-0008-adaptive-search-v1
+          fetch-depth: 0
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends g++ make git curl unzip python3
+
+      - name: Apply and persist FAYE-0008 v1 candidate
+        run: |
+          set -euo pipefail
+          mkdir -p results
+          test "$(git merge-base --is-ancestor "$PARENT_SHA" HEAD; echo $?)" = "0"
+          python3 scripts/apply_faye_0008_v1.py
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('experiments/FAYE-0008-v1-adaptive-search-controller.json')
+          d=json.loads(p.read_text())
+          d['status']='screen-running'
+          d['screen']['github_run_id']='${{ github.run_id }}'
+          p.write_text(json.dumps(d,indent=2)+'\n')
+          PY
+          git diff --check
+          git diff -- src/search.h src/search.cpp src/search_controller.h experiments/FAYE-0008-v1-adaptive-search-controller.json > results/faye-0008-v1.patch
+          test -s results/faye-0008-v1.patch
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/search.h src/search.cpp src/search_controller.h experiments/FAYE-0008-v1-adaptive-search-controller.json
+          if ! git diff --cached --quiet; then
+            git commit -m "Implement FAYE-0008 v1 adaptive search controller [skip ci]"
+            git push origin HEAD:experiment/faye-0008-adaptive-search-v1
+          fi
+          CANDIDATE_SHA=$(git rev-parse HEAD)
+          echo "CANDIDATE_SHA=$CANDIDATE_SHA" >> "$GITHUB_ENV"
+          echo "$CANDIDATE_SHA" > results/candidate-sha.txt
+          echo "$PARENT_SHA" > results/parent-sha.txt
+
+      - name: Build isolated candidate and parent
+        run: |
+          set -euo pipefail
+          git worktree add --detach parent "$PARENT_SHA"
+          mkdir -p build
+          make -C src -j2 profile-build ARCH="$BUILD_ARCH" COMP=gcc
+          cp src/stockfish build/candidate
+          make -C parent/src -j2 profile-build ARCH="$BUILD_ARCH" COMP=gcc
+          cp parent/src/stockfish build/parent
+          chmod +x build/candidate build/parent
+
+      - name: UCI and perft correctness gates
+        run: |
+          set -euo pipefail
+          printf 'uci\nisready\nquit\n' | ./build/candidate | tee results/candidate-uci.txt
+          grep -q '^uciok$' results/candidate-uci.txt
+          grep -q '^readyok$' results/candidate-uci.txt
+          for engine in candidate parent; do
+            printf 'position startpos\ngo perft 5\nquit\n' | ./build/$engine > results/${engine}-perft.txt
+            grep -Eq 'Nodes searched[^0-9]*4865609' results/${engine}-perft.txt
+          done
+
+      - name: Benchmark determinism and NPS
+        run: |
+          set -euo pipefail
+          for i in 1 2 3 4 5; do
+            ./build/parent bench 16 1 8 default depth > "results/parent-bench-${i}.txt" 2>&1
+            ./build/candidate bench 16 1 8 default depth > "results/candidate-bench-${i}.txt" 2>&1
+          done
+          python3 - <<'PY'
+          import json, pathlib, re, statistics
+          def read(prefix):
+              nps=[]; nodes=[]
+              for p in sorted(pathlib.Path('results').glob(prefix+'-bench-*.txt')):
+                  t=p.read_text(errors='replace')
+                  m=re.search(r'Nodes/second\s*:\s*(\d+)',t)
+                  n=re.search(r'Nodes searched\s*:\s*(\d+)',t)
+                  if not m or not n: raise SystemExit(f'Cannot parse {p}')
+                  nps.append(int(m.group(1))); nodes.append(int(n.group(1)))
+              if len(set(nodes)) != 1:
+                  raise SystemExit(f'{prefix} bench is nondeterministic: {nodes}')
+              return nps,nodes[0]
+          cand,cn=read('candidate'); parent,pn=read('parent')
+          cm=statistics.median(cand); pm=statistics.median(parent)
+          speed=(cm/pm-1)*100
+          out={
+            'candidate_nps':cand,'parent_nps':parent,
+            'candidate_median_nps':cm,'parent_median_nps':pm,
+            'median_nps_delta_percent':speed,
+            'candidate_bench_nodes':cn,'parent_bench_nodes':pn,
+            'functional_search_change':cn != pn
+          }
+          pathlib.Path('results/efficiency.json').write_text(json.dumps(out,indent=2)+'\n')
+          pathlib.Path('results/efficiency.md').write_text(
+            '### FAYE-0008 v1 bench\n\n'
+            f'- Candidate median NPS: {cm:,.0f}\n'
+            f'- Parent median NPS: {pm:,.0f}\n'
+            f'- Median NPS delta: {speed:+.3f}%\n'
+            f'- Candidate bench nodes: {cn:,}\n'
+            f'- Parent bench nodes: {pn:,}\n')
+          if speed < -8.0:
+              raise SystemExit(f'Candidate NPS regression {speed:.3f}% is too large for initial screen')
+          PY
+          cat results/efficiency.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Build pinned Fastchess
+        run: |
+          set -euo pipefail
+          git clone https://github.com/Disservin/fastchess.git fastchess-src
+          git -C fastchess-src checkout "$FASTCHESS_SHA"
+          make -C fastchess-src -j2 GIT_SHA="${FASTCHESS_SHA:0:8}" GIT_DATE=01010101
+          mkdir -p tools
+          cp fastchess-src/fastchess tools/fastchess
+          chmod +x tools/fastchess
+
+      - name: Download Fishtest opening set
+        id: book
+        run: |
+          set -euo pipefail
+          mkdir -p books
+          curl -L --fail --retry 3 \
+            https://raw.githubusercontent.com/official-stockfish/books/master/UHO_Lichess_4852_v1.epd.zip \
+            -o books/UHO_Lichess_4852_v1.epd.zip
+          unzip -o -j books/UHO_Lichess_4852_v1.epd.zip -d books
+          test -s books/UHO_Lichess_4852_v1.epd
+          echo "file=books/UHO_Lichess_4852_v1.epd" >> "$GITHUB_OUTPUT"
+
+      - name: Run 600-game paired parent screen
+        env:
+          ENGINE_A: ./build/candidate
+          ENGINE_B: ./build/parent
+          ENGINE_A_NAME: FAYE-0008-v1
+          ENGINE_B_NAME: FayE-modernized-parent
+          ENGINE_A_OPTIONS: ''
+          ENGINE_B_OPTIONS: ''
+          FASTCHESS: ./tools/fastchess
+          BOOK_FILE: ${{ steps.book.outputs.file }}
+          VARIANT: standard
+          TC: ${{ env.TC }}
+          ROUNDS: '300'
+          CONCURRENCY: ${{ env.CONCURRENCY }}
+          THREADS: ${{ env.THREADS }}
+          HASH_MB: ${{ env.HASH_MB }}
+          MODE: fixed
+          OUTPUT_DIR: results
+          SPRT_ELO0: '0'
+          SPRT_ELO1: '3'
+          SEED: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          chmod +x scripts/run_ab_match.sh
+          scripts/run_ab_match.sh
+
+      - name: Summarize screen
+        if: always()
+        run: |
+          set -euo pipefail
+          if [[ -s results/ab-match.pgn ]]; then
+            python3 scripts/summarize_ab.py results/ab-match.pgn \
+              --json-out results/summary.json \
+              --markdown-out results/summary.md
+            cat results/summary.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+          python3 - <<'PY'
+          import json, os, pathlib
+          meta={
+            'experiment_id':'FAYE-0008-v1',
+            'architecture':'multi-signal adaptive search controller',
+            'candidate_sha':os.environ.get('CANDIDATE_SHA'),
+            'parent_sha':os.environ['PARENT_SHA'],
+            'games':600,'paired':True,'tc':'10+0.1','threads':1,'hash_mb':16,
+            'book':'UHO_Lichess_4852_v1.epd',
+            'fastchess_commit':os.environ['FASTCHESS_SHA'],
+            'controlled_mechanisms':['LMR','futility','null-move gate','razoring'],
+            'runtime':'CPU-only'
+          }
+          pathlib.Path('results/experiment-metadata.json').write_text(json.dumps(meta,indent=2)+'\n')
+          PY
+
+      - name: Upload result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FAYE-0008-v1-screen-${{ github.run_id }}
+          path: results/
+          retention-days: 30
