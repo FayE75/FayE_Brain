@@ -1,7 +1,7 @@
 {
   "id": "FAYE-0008-v2",
   "title": "Multi-Signal Adaptive Search Controller v2",
-  "status": "prepared-for-parent-screen",
+  "status": "promoted",
   "parent_branch": "modernization/pre-faye-0008-final",
   "parent_commit": "dce678ece3c89c07b0225ea17f781f7d2e215380",
   "runtime": "CPU-only",
@@ -24,22 +24,42 @@
     "Reduce root-volatility and root-churn contribution to uncertainty.",
     "Reduce LMR amplitude by roughly half versus v1.",
     "Reduce futility-margin amplitude versus v1.",
-    "Disable controller adjustments at very shallow depth.",
+    "Activate the controller only from depth 11 upward to protect the hot shallow tree.",
     "Use smoother thresholds so low/high confidence effects are less abrupt."
   ],
   "screen": {
-    "games": 600,
+    "planned_games": 600,
+    "completed_games": 359,
     "paired": true,
-    "rounds": 300,
+    "planned_rounds": 300,
     "book": "UHO_Lichess_4852_v1.epd",
     "tc": "10+0.1",
     "threads": 1,
     "hash_mb": 16,
     "fastchess_commit": "60d7a7a26c6b0582a15c112fb29a1829bef2adb3",
-    "sprt_elo0": 0,
-    "sprt_elo1": 3,
-    "require_perft": true,
-    "nps_repeats": 5
+    "github_run_id": 37012990618,
+    "termination": "GitHub Actions job timeout at 210 minutes during game 360; no engine crash detected.",
+    "partial_result": {
+      "wins": 86,
+      "draws": 196,
+      "losses": 77,
+      "score_percent": 51.2535,
+      "descriptive_elo": 8.71
+    },
+    "nps_guard": {
+      "passed": true,
+      "guard_percent": -3.0,
+      "observed_delta_percent": -1.8089
+    }
   },
-  "decision_policy": "Exploratory screen. If positive/non-adverse, continue with larger confirmation and channel ablations. If negative, iterate v3 using measured channel behavior rather than abandoning the architecture."
+  "promotion": {
+    "decision": "promoted",
+    "promotion_target": "main",
+    "promotion_snapshot_branch": "promotion/faye-0008-v2",
+    "promotion_source_sha": "e781a0f6c5e0b87679e0def5e2d50dc7153eee22",
+    "basis": "Promoted by project owner after a positive but incomplete paired parent screen. The partial result is descriptive and is not treated as a completed 600-game confirmation.",
+    "strength_claim": "provisional",
+    "next_protocol": "All new FayE feature/tuning experiments start from the promoted FayE baseline and are evaluated against official-stockfish/Stockfish master fetched at run time."
+  },
+  "decision_policy": "Promoted as the new FayE baseline by project decision. Continue tuning and new architecture work from this baseline; future candidate-vs-reference tests use Stockfish latest rather than the pre-FAYE parent."
 }
