@@ -1,7 +1,7 @@
 {
   "id": "FAYE-0007",
   "title": "Remove redundant QUIET_INIT MovePicker stage",
-  "status": "screening",
+  "status": "closed-no-promotion",
   "mechanism": "move-picker control-flow efficiency",
   "source": "official-stockfish/Stockfish#7150",
   "candidate_only": true,
@@ -18,5 +18,25 @@
     "require_identical_bench_nodes": true
   },
   "promotion_rule": "Do not merge from this screen alone. Advance only if strength is non-adverse and any efficiency signal is credible/reproducible.",
-  "next": "After FAYE-0007 decision, stop prioritizing micro-patches and proceed to the separate modernization gate before FAYE-0008."
+  "next": "Begin separate behavior-preserving whole-codebase modernization; do not attribute modernization changes to Elo. After modernization correctness/performance gates pass, proceed to FAYE-0008.",
+  "result": {
+    "run_id": 36964055625,
+    "games": 400,
+    "wins": 103,
+    "draws": 195,
+    "losses": 102,
+    "score_percent": 50.12,
+    "descriptive_elo": "+0.87 +/- 15.52",
+    "los_percent": 54.37,
+    "pentanomial": [
+      1,
+      36,
+      126,
+      35,
+      2
+    ],
+    "functional_bench": "identical bench-node requirement passed",
+    "decision": "no-promotion",
+    "rationale": "The paired screen was essentially flat. A 400-game screen alone is insufficient for promotion and no independently reproducible efficiency gain has been established. Per plan, stop micro-patches and move to the separate behavior-preserving modernization gate before FAYE-0008."
+  }
 }
