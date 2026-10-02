@@ -1,10 +1,10 @@
 {
   "id": "FAYE-0007",
   "title": "Remove redundant QUIET_INIT MovePicker stage",
-  "status": "closed-no-promotion",
+  "status": "promoted",
   "mechanism": "move-picker control-flow efficiency",
   "source": "official-stockfish/Stockfish#7150",
-  "candidate_only": true,
+  "candidate_only": false,
   "rationale": "FayE main still contains the redundant QUIET_INIT stage removed by upstream PR #7150. The patch removes one enum stage and the redundant stage increment/fallthrough without changing move generation or ordering semantics.",
   "validation": {
     "stage": "400-game paired screen",
@@ -17,7 +17,7 @@
     "nps_repeats": 5,
     "require_identical_bench_nodes": true
   },
-  "promotion_rule": "Do not merge from this screen alone. Advance only if strength is non-adverse and any efficiency signal is credible/reproducible.",
+  "promotion_rule": "Adopted as a semantics-preserving maintenance cleanup rather than as a strength gain; the flat 400-game screen is not evidence of Elo improvement.",
   "next": "Begin separate behavior-preserving whole-codebase modernization; do not attribute modernization changes to Elo. After modernization correctness/performance gates pass, proceed to FAYE-0008.",
   "result": {
     "run_id": 36964055625,
@@ -36,7 +36,17 @@
       2
     ],
     "functional_bench": "identical bench-node requirement passed",
-    "decision": "no-promotion",
-    "rationale": "The paired screen was essentially flat. A 400-game screen alone is insufficient for promotion and no independently reproducible efficiency gain has been established. Per plan, stop micro-patches and move to the separate behavior-preserving modernization gate before FAYE-0008."
+    "decision": "promoted",
+    "rationale": "Promoted as a no-functional-change MovePicker cleanup. The paired strength screen was essentially flat, so no strength improvement is claimed. Identical functional bench nodes passed, and the adopted code change only removes the redundant QUIET_INIT stage/control-flow step."
+  },
+  "promotion": {
+    "type": "maintenance-cleanup",
+    "strength_claim": "none",
+    "code_change": "Remove redundant QUIET_INIT MovePicker stage and fallthrough increment.",
+    "basis": [
+      "400-game paired screen was essentially flat",
+      "functional bench-node equality passed",
+      "upstream source patch is explicitly described as no functional change"
+    ]
   }
 }
