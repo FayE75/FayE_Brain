@@ -1,0 +1,66 @@
+{
+  "id": "FAYE-0008-v1",
+  "title": "Multi-Signal Adaptive Search Controller v1",
+  "status": "prepared-for-parent-screen",
+  "parent_branch": "modernization/pre-faye-0008-final",
+  "parent_commit": "dce678ece3c89c07b0225ea17f781f7d2e215380",
+  "runtime": "CPU-only",
+  "scale": "major-search-architecture-experiment",
+  "goal": "Use one explicit uncertainty signal to coordinate several selective-search mechanisms instead of tuning each mechanism independently.",
+  "novelty_audit": {
+    "current_stockfish_master_checked": true,
+    "current_master_commit_observed": "49ea5ded38315cff8e67f4a677a9e7811612fbf6",
+    "observations": [
+      "Current Stockfish has root bestMoveChanges, but uses that signal for time management rather than as a unified controller for LMR, razoring, futility and null-move pruning.",
+      "Current Stockfish has many adaptive pruning/reduction heuristics, but no explicit uncertainty/confidence or policy head was found in the current code search.",
+      "Current Stockfish already uses evaluation history, TT state, correction history and root score statistics separately; FAYE-0008-v1 combines disagreement and root-instability signals into one typed controller output."
+    ],
+    "historical_caution": "This is an experimental engineering novelty claim only. Do not claim literature-level novelty until a broader historical Stockfish/Fishtest audit is completed.",
+    "research_context": [
+      "Risk management in game-tree pruning (Information Sciences, 2000): motivates explicit risk assessment for forward pruning.",
+      "Searching with Uncertainty Cut-Offs (ICGA Journal, 1997): historical precedent for treating uncertainty as a search-control concept.",
+      "Recent neural-chess work on learned planning/policy representations motivates eventually learning the controller signal, but v1 intentionally stays deterministic and CPU-only."
+    ]
+  },
+  "signals": [
+    "iterative-deepening root score volatility",
+    "root best-move churn",
+    "effective-eval versus corrected-static-eval disagreement",
+    "TT searched-value versus corrected-static-eval disagreement",
+    "correction-history magnitude",
+    "improving/opponent-worsening state",
+    "TT-PV confidence"
+  ],
+  "controlled_mechanisms": [
+    "LMR reduction amount",
+    "child-node futility margin",
+    "null-move pruning entry threshold",
+    "razoring margin"
+  ],
+  "design_rules": [
+    "High uncertainty makes pruning/reduction more conservative.",
+    "Low uncertainty permits mildly more aggressive pruning/reduction.",
+    "No dynamic allocation in the hot path.",
+    "No GPU/CUDA requirement.",
+    "No NNUE format change in v1.",
+    "All controller math is integer-only and uses signals already produced by search."
+  ],
+  "screen": {
+    "games": 600,
+    "paired": true,
+    "rounds": 300,
+    "book": "UHO_Lichess_4852_v1.epd",
+    "tc": "10+0.1",
+    "threads": 1,
+    "hash_mb": 16,
+    "fastchess_commit": "60d7a7a26c6b0582a15c112fb29a1829bef2adb3",
+    "sprt_elo0": 0,
+    "sprt_elo1": 3,
+    "require_perft": true,
+    "bench_policy": "Bench nodes may change because this is a functional search change; benchmark determinism within each binary is still required.",
+    "nps_repeats": 5
+  },
+  "decision_policy": "This screen is exploratory. A positive screen is not enough for merge; require a larger independent confirmation and ablations showing which controller channels contribute.",
+  "next_if_positive": "Run larger normalized-SPRT confirmation, then ablate LMR/futility/NMP/razoring channels independently before any promotion.",
+  "next_if_negative": "Keep the architecture scaffold, revise controller signal/weights, and run v2 rather than returning to unrelated micro-patches."
+}
