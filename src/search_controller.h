@@ -77,7 +77,9 @@ struct SearchControl {
 
 // Keep the expensive multi-signal calculation out of the alpha-beta hot path.
 // This helper is reached only for sufficiently deep nodes through the tiny wrapper below.
-[[nodiscard]] FAYE_NOINLINE FAYE_COLD SearchControl
+// `inline` gives this header-defined helper one ODR entity across translation units;
+// FAYE_NOINLINE still prevents the compiler from folding its body back into search().
+[[nodiscard]] inline FAYE_NOINLINE FAYE_COLD SearchControl
 make_search_control_deep(const AdaptiveSearchState& state,
                          Value                      staticEval,
                          Value                      effectiveEval,
