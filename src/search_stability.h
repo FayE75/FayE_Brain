@@ -46,12 +46,10 @@ class PositionStabilityTable {
         if (!e.depth8 || e.key32 != fingerprint(key) || int(e.depth8) >= int(depth))
             return 0;
 
-        // Require repeated cross-depth evidence before affecting search.
-        // Stable positions may be reduced very slightly more; unstable positions
-        // are searched more conservatively. Values are in Stockfish LMR units
-        // where ~1024 is roughly one ply.
-        if (e.confidence >= 3)
-            return 48;
+        // v2 is intentionally one-sided: stable positions keep the promoted
+        // FAYE-0008-v2 policy unchanged. Only positions with repeated evidence
+        // of cross-depth instability receive a more conservative LMR correction.
+        // Values are in Stockfish LMR units where ~1024 is roughly one ply.
         if (e.confidence <= -3)
             return -96;
         return 0;
