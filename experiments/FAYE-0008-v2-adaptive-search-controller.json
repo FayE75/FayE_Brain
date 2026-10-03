@@ -1,7 +1,8 @@
 {
   "id": "FAYE-0008-v2",
   "title": "Multi-Signal Adaptive Search Controller v2",
-  "status": "promoted",
+  "status": "promoted-final",
+  "phase": "closed",
   "parent_branch": "modernization/pre-faye-0008-final",
   "parent_commit": "dce678ece3c89c07b0225ea17f781f7d2e215380",
   "runtime": "CPU-only",
@@ -27,7 +28,7 @@
     "Activate the controller only from depth 11 upward to protect the hot shallow tree.",
     "Use smoother thresholds so low/high confidence effects are less abrupt."
   ],
-  "screen": {
+  "parent_screen": {
     "planned_games": 600,
     "completed_games": 359,
     "paired": true,
@@ -52,14 +53,50 @@
       "observed_delta_percent": -1.8089
     }
   },
+  "stockfish_latest_baseline": {
+    "github_run_id": 37041413193,
+    "candidate_sha": "617f242895c2a3dcb1e38b14225167e74ef645ff",
+    "stockfish_sha": "49ea5ded38315cff8e67f4a677a9e7811612fbf6",
+    "games": 600,
+    "wins": 153,
+    "draws": 305,
+    "losses": 142,
+    "score_percent": 50.92,
+    "fastchess_elo": 6.37,
+    "fastchess_elo_95ci_half_width": 13.94,
+    "fastchess_nelo": 12.71,
+    "fastchess_nelo_95ci_half_width": 27.80,
+    "los_percent": 81.50,
+    "pentanomial_0_2": [1, 66, 155, 77, 1],
+    "tc": "10+0.1",
+    "threads": 1,
+    "hash_mb": 16,
+    "concurrency": 2,
+    "book": "UHO_Lichess_4852_v1.epd",
+    "interpretation": "Positive point estimate against the Stockfish master fetched at run start; confidence interval overlaps zero, so this is baseline evidence rather than a claim of statistically established superiority."
+  },
+  "followup_ablations": {
+    "lmr_only": "approximately neutral against the same Stockfish reference",
+    "futility_only": "near the promoted-v2 point estimate",
+    "half_lmr_plus_futility": {
+      "github_run_id": 37123002946,
+      "games": 600,
+      "wins": 143,
+      "draws": 304,
+      "losses": 153,
+      "score_percent": 49.17,
+      "decision": "no-promotion"
+    },
+    "conclusion": "Further FAYE-0008 micro-calibration is retired. Preserve v2 unchanged as the project baseline and move to a new major architecture experiment."
+  },
   "promotion": {
-    "decision": "promoted",
+    "decision": "promoted-final",
     "promotion_target": "main",
     "promotion_snapshot_branch": "promotion/faye-0008-v2",
     "promotion_source_sha": "e781a0f6c5e0b87679e0def5e2d50dc7153eee22",
-    "basis": "Promoted by project owner after a positive but incomplete paired parent screen. The partial result is descriptive and is not treated as a completed 600-game confirmation.",
-    "strength_claim": "provisional",
-    "next_protocol": "All new FayE feature/tuning experiments start from the promoted FayE baseline and are evaluated against official-stockfish/Stockfish master fetched at run time."
+    "basis": "Promoted by project owner, retained after a completed 600-game Stockfish-latest baseline screen and focused ablations.",
+    "strength_claim": "official-project-baseline; no claim of statistically established superiority over Stockfish",
+    "next_protocol": "FAYE-0009 and later primary experiments start from this promoted main baseline plus one major focused architecture change, and are evaluated against official-stockfish/Stockfish master fetched at run time with recorded SHAs."
   },
-  "decision_policy": "Promoted as the new FayE baseline by project decision. Continue tuning and new architecture work from this baseline; future candidate-vs-reference tests use Stockfish latest rather than the pre-FAYE parent."
+  "decision_policy": "FAYE-0008 is closed. Do not continue parameter micro-tuning as the primary roadmap. FAYE-0009 begins from the promoted v2 baseline."
 }
