@@ -147,7 +147,8 @@ make_search_control_deep(const AdaptiveSearchState& state,
                                                        bool                       improving,
                                                        bool                       opponentWorsening,
                                                        bool                       ttHit,
-                                                       bool                       ttPv) {
+                                                       bool                       ttPv,
+                                                       int                        stabilityLmrDelta) {
     // v2 keeps the node-heavy shallow and mid-depth tree exactly on parent policy.
     // The controller activates only from depth 11 upward. This preserves the
     // adaptive architecture where evidence is more stable while keeping the
@@ -155,8 +156,16 @@ make_search_control_deep(const AdaptiveSearchState& state,
     if (depth <= 10)
         return {};
 
-    return make_search_control_deep(state, staticEval, effectiveEval, ttValue, correctionValue,
-                                    improving, opponentWorsening, ttHit, ttPv);
+    SearchControl out =
+      make_search_control_deep(state, staticEval, effectiveEval, ttValue, correctionValue,
+                               improving, opponentWorsening, ttHit, ttPv);
+
+    // FAYE-0009 adds only a small cross-depth LMR correction. The clamp
+    // keeps the combined response within the already-tested FAYE-0008-v2
+    // operating envelope plus a conservative instability allowance.
+    out.lmrDelta = static_cast<std::int16_t>(
+      std::clamp(int(out.lmrDelta) + stabilityLmrDelta, -512, 256));
+    return out;
 }
 
 #undef FAYE_NOINLINE

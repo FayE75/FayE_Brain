@@ -1,0 +1,35 @@
+{
+  "experiment": "FAYE-0009-v1-cross-depth-stability-memory",
+  "status": "engineering-screen",
+  "base_branch": "main",
+  "base_sha": "7ec08af834430aef731f1189bf982418d2a6af94",
+  "promoted_baseline": "FAYE-0008-v2",
+  "feature": {
+    "name": "Per-Position Cross-Depth Stability Memory",
+    "scope": "per-worker, per-go, internal search positions",
+    "table_entries": 4096,
+    "minimum_depth": 11,
+    "stable_threshold": 3,
+    "unstable_threshold": -3,
+    "stable_lmr_delta": 48,
+    "unstable_lmr_delta": -96,
+    "only_controlled_channel": "LMR",
+    "persistent_across_games": false,
+    "gpu_required": false
+  },
+  "design_guards": [
+    "No NNUE or evaluation changes",
+    "No NMP, ProbCut, TT-cutoff, razoring, or futility-policy changes",
+    "No heap allocation in the node hot path",
+    "Ignore excluded-move/singular-search observations",
+    "Require repeated deeper observations before LMR changes",
+    "Reset stability memory once per UCI go"
+  ],
+  "primary_strength_protocol": {
+    "opponent": "official-stockfish/Stockfish master fetched at run start",
+    "paired_openings": "UHO_Lichess_4852_v1.epd",
+    "threads": 1,
+    "games": 600,
+    "workflow": ".github/workflows/faye-vs-stockfish-latest.yml"
+  }
+}

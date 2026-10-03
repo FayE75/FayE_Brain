@@ -38,6 +38,7 @@
 #include "position.h"
 #include "score.h"
 #include "search_controller.h"
+#include "search_stability.h"
 #include "syzygy/tbprobe.h"
 #include "timeman.h"
 #include "types.h"
@@ -386,8 +387,9 @@ class Worker {
     Depth     rootDepth;
     Value     rootDelta;
 
-    AdaptiveSearchState adaptiveSearch;
-    PVMoves             lastIterationIdxPV;
+    AdaptiveSearchState   adaptiveSearch;
+    PositionStabilityTable stabilityTable;
+    PVMoves               lastIterationIdxPV;
 
     usize                     threadIdx, numaThreadIdx, numaTotal;
     NumaReplicatedAccessToken numaAccessToken;

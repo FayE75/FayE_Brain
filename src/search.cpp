@@ -278,6 +278,7 @@ bool Search::Worker::iterative_deepening() {
     PVMoves pv;
 
     adaptiveSearch.reset();
+    stabilityTable.reset();
 
     RootPVMoves lastBestMovePV;
     Depth       lastBestMoveDepth = 0;
@@ -881,9 +882,12 @@ Value Search::Worker::search(
     improving         = ss->staticEval > (ss - 2)->staticEval;
     opponentWorsening = ss->staticEval > -(ss - 1)->staticEval;
 
+    const int stabilityLmrDelta =
+      (!rootNode && !excludedMove && depth > 10) ? stabilityTable.lmr_delta(posKey, depth) : 0;
+
     const SearchControl searchControl =
       make_search_control(adaptiveSearch, ss->staticEval, eval, ttData.value, correctionValue, depth,
-                          improving, opponentWorsening, ss->ttHit, ss->ttPv);
+                          improving, opponentWorsening, ss->ttHit, ss->ttPv, stabilityLmrDelta);
 
     // Hindsight adjustment of reductions based on static evaluation difference
     if (priorReduction >= 3 && !opponentWorsening)
@@ -1650,6 +1654,12 @@ moves_loop:  // When in check, search starts here
     // opponent move is probably good and the new position is added to the search tree.
     if (bestValue <= alpha)
         ss->ttPv = ss->ttPv || (ss - 1)->ttPv;
+
+    // FAYE-0009: retain cross-depth evidence for this exact internal position.
+    // Excluded-move searches are deliberately ignored because they describe an
+    // artificial search state rather than the normal position policy.
+    if (!rootNode && !excludedMove && depth > 10 && bestMove && !is_decisive(bestValue))
+        stabilityTable.observe(posKey, bestMove, bestValue, depth);
 
     // Step 24. Write gathered information in transposition table. Note that the
     // static evaluation is saved as it was before correction history.
