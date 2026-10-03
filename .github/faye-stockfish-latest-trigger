@@ -1,0 +1,4 @@
+FAYE-0009-v1-cross-depth-stability
+base=FAYE-0008-v2
+implementation=83792b85
+protocol=600-paired-UHO-vs-stockfish-latest
