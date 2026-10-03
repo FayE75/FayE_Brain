@@ -1,0 +1,21 @@
+{
+  "id": "FAYE-0008-v2-futility-only-v1",
+  "base": "promoted FAYE-0008-v2",
+  "purpose": "Diagnostic channel ablation after LMR-only was flat versus Stockfish latest.",
+  "change": "Keep promoted v2 uncertainty signal, activation depth, thresholds, and futility-margin response; disable adaptive LMR deltas only.",
+  "comparison": "official-stockfish/Stockfish master fetched at run start",
+  "protocol": {
+    "games": 600,
+    "paired": true,
+    "book": "UHO_Lichess_4852_v1.epd",
+    "tc": "10+0.1",
+    "threads": 1,
+    "hash_mb": 16
+  },
+  "reference": {
+    "promoted_baseline_run": 37041413193,
+    "lmr_only_run": 37096269614,
+    "lmr_only_result": "159W/282D/159L, 50.00%, Elo 0.00 +/- 14.45, nElo 0.00 +/- 27.80, LOS 50.00%, penta [2,74,147,76,1]"
+  },
+  "decision": "Ready and triggered for Stockfish-latest strength screen."
+}
