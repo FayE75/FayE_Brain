@@ -125,13 +125,13 @@ make_search_control_deep(const AdaptiveSearchState& state,
     if (uncertainty >= HighThreshold)
     {
         const int excess        = uncertainty - HighThreshold;
-        out.lmrDelta            = static_cast<std::int16_t>(-224 - 2 * excess);
+        out.lmrDelta            = static_cast<std::int16_t>(0);
         out.futilityMarginDelta = static_cast<std::int16_t>(12 + excess / 4);
     }
     else if (uncertainty <= LowThreshold)
     {
         const int confidence    = LowThreshold - uncertainty;
-        out.lmrDelta            = static_cast<std::int16_t>(96 + confidence);
+        out.lmrDelta            = static_cast<std::int16_t>(0);
         out.futilityMarginDelta = static_cast<std::int16_t>(-6 - confidence / 8);
     }
 
