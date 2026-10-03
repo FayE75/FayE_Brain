@@ -65,13 +65,12 @@ struct AdaptiveSearchState {
     }
 };
 
-// v2 keeps the return payload register-sized. The old v1 SearchControl carried
-// five 32-bit fields (20 bytes), including an exported uncertainty value that
-// search.cpp never consumed. Four signed 16-bit deltas are sufficient for all
-// v2 ranges and preserve the existing integration points for disabled NMP/razoring.
+// Keep the promoted v2 payload and integration points unchanged so this
+// experiment isolates one controller channel only. In this LMR-only ablation,
+// futility/NMP/razoring deltas remain zero while the promoted LMR response stays active.
 struct SearchControl {
     std::int16_t lmrDelta               = 0;  // reduction units, ~1024 ~= one ply
-    std::int16_t futilityMarginDelta    = 0;  // centipawn-like Value units
+    std::int16_t futilityMarginDelta    = 0;  // LMR-only ablation: disabled
     std::int16_t nullMoveThresholdDelta = 0;  // v2: deliberately disabled
     std::int16_t razorMarginDelta       = 0;  // v2: deliberately disabled
 };
@@ -94,7 +93,7 @@ make_search_control_deep(const AdaptiveSearchState& state,
                          bool                       ttPv) {
     SearchControl out;
 
-    // v2 reduces the global/root contribution and lets local disagreement dominate.
+    // Preserve the promoted v2 uncertainty signal exactly.
     int uncertainty = state.rootVolatility / 4 + state.rootChurn / 8;
 
     if (is_valid(staticEval) && !is_decisive(staticEval) && is_valid(effectiveEval)
@@ -105,7 +104,6 @@ make_search_control_deep(const AdaptiveSearchState& state,
         && !is_decisive(staticEval))
         uncertainty += std::min(56, std::abs(int(ttValue) - int(staticEval)) / 4);
 
-    // Correction-history magnitude remains useful, but with less authority than v1.
     uncertainty += std::min(36, std::abs(correctionValue) / 49152);
 
     if (!improving)
@@ -117,22 +115,21 @@ make_search_control_deep(const AdaptiveSearchState& state,
 
     uncertainty = std::clamp(uncertainty, 0, 256);
 
-    // Smoother, smaller response than v1. Only LMR and child-node futility are
-    // controlled in this stage. NMP and razoring remain exactly at parent policy.
+    // Diagnostic ablation: preserve promoted v2 thresholds and LMR amplitudes,
+    // but do not alter child-node futility margins. NMP and razoring also remain
+    // at parent policy, so LMR is the only adaptive pruning/reduction channel here.
     constexpr int HighThreshold = 160;
     constexpr int LowThreshold  = 80;
 
     if (uncertainty >= HighThreshold)
     {
-        const int excess        = uncertainty - HighThreshold;
-        out.lmrDelta            = static_cast<std::int16_t>(-224 - 2 * excess);
-        out.futilityMarginDelta = static_cast<std::int16_t>(12 + excess / 4);
+        const int excess = uncertainty - HighThreshold;
+        out.lmrDelta     = static_cast<std::int16_t>(-224 - 2 * excess);
     }
     else if (uncertainty <= LowThreshold)
     {
-        const int confidence    = LowThreshold - uncertainty;
-        out.lmrDelta            = static_cast<std::int16_t>(96 + confidence);
-        out.futilityMarginDelta = static_cast<std::int16_t>(-6 - confidence / 8);
+        const int confidence = LowThreshold - uncertainty;
+        out.lmrDelta         = static_cast<std::int16_t>(96 + confidence);
     }
 
     return out;
@@ -148,10 +145,7 @@ make_search_control_deep(const AdaptiveSearchState& state,
                                                        bool                       opponentWorsening,
                                                        bool                       ttHit,
                                                        bool                       ttPv) {
-    // v2 keeps the node-heavy shallow and mid-depth tree exactly on parent policy.
-    // The controller activates only from depth 11 upward. This preserves the
-    // adaptive architecture where evidence is more stable while keeping the
-    // controller outside the exponentially larger shallow subtree.
+    // Preserve promoted v2 activation depth exactly so only the futility channel differs.
     if (depth <= 10)
         return {};
 
