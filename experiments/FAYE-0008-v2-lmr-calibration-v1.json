@@ -1,0 +1,36 @@
+{
+  "id": "FAYE-0008-v2-lmr-calibration-v1",
+  "base": "promoted FAYE-0008-v2",
+  "status": "screening",
+  "purpose": "Calibrate LMR authority after channel ablations while preserving the promoted adaptive-futility response.",
+  "evidence": {
+    "promoted_v2_run": 37041413193,
+    "promoted_v2_score_percent": 50.92,
+    "lmr_only_run": 37096269614,
+    "lmr_only_score_percent": 50.00,
+    "futility_only_run": 37109522401,
+    "futility_only_score_percent": 50.83,
+    "stockfish_sha_for_all_three": "49ea5ded38315cff8e67f4a677a9e7811612fbf6"
+  },
+  "hypothesis": "Adaptive futility appears to carry most of the observed point-estimate gain. Halving LMR modulation may retain complementary deep-search information while reducing overcorrection from the full-strength LMR channel.",
+  "change": {
+    "uncertainty_signal": "unchanged from promoted FAYE-0008-v2",
+    "activation_depth": ">=11 unchanged",
+    "thresholds": "High=160, Low=80 unchanged",
+    "high_uncertainty_lmr": "-112 - excess (was -224 - 2*excess)",
+    "low_uncertainty_lmr": "48 + confidence/2 (was 96 + confidence)",
+    "futility_margin": "unchanged from promoted FAYE-0008-v2",
+    "null_move_and_razor": "unchanged/disabled"
+  },
+  "comparison": "official-stockfish/Stockfish master fetched at run start",
+  "protocol": {
+    "games": 600,
+    "paired": true,
+    "book": "UHO_Lichess_4852_v1.epd",
+    "tc": "10+0.1",
+    "threads": 1,
+    "hash_mb": 16,
+    "concurrency": 2
+  },
+  "decision_rule": "Do not promote from point estimate alone. Compare against the promoted baseline under the exact runtime Stockfish SHA and retain only if evidence is meaningfully favorable or warrants confirmation."
+}
