@@ -117,21 +117,22 @@ make_search_control_deep(const AdaptiveSearchState& state,
 
     uncertainty = std::clamp(uncertainty, 0, 256);
 
-    // Smoother, smaller response than v1. Only LMR and child-node futility are
-    // controlled in this stage. NMP and razoring remain exactly at parent policy.
+    // LMR calibration v1: the ablations indicate that adaptive futility carries
+    // most of the observed strength signal, while LMR-only was flat. Keep the
+    // promoted v2 futility response intact and halve only LMR authority.
     constexpr int HighThreshold = 160;
     constexpr int LowThreshold  = 80;
 
     if (uncertainty >= HighThreshold)
     {
         const int excess        = uncertainty - HighThreshold;
-        out.lmrDelta            = static_cast<std::int16_t>(-224 - 2 * excess);
+        out.lmrDelta            = static_cast<std::int16_t>(-112 - excess);
         out.futilityMarginDelta = static_cast<std::int16_t>(12 + excess / 4);
     }
     else if (uncertainty <= LowThreshold)
     {
         const int confidence    = LowThreshold - uncertainty;
-        out.lmrDelta            = static_cast<std::int16_t>(96 + confidence);
+        out.lmrDelta            = static_cast<std::int16_t>(48 + confidence / 2);
         out.futilityMarginDelta = static_cast<std::int16_t>(-6 - confidence / 8);
     }
 
