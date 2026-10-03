@@ -1,4 +1,4 @@
-FAYE-0009-v1-cross-depth-stability
+FAYE-0009-v2-cross-depth-stability-unstable-only
 base=FAYE-0008-v2
-implementation=83792b85
+implementation=ba9b37b91837770c5c0631781c4a6e27b7409a11
 protocol=600-paired-UHO-vs-stockfish-latest
