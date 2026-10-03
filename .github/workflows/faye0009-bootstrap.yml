@@ -1,0 +1,109 @@
+name: FAYE-0009 Cross-Depth Stability Bootstrap
+
+on:
+  push:
+    branches:
+      - 'experiment/faye-0009-cross-depth-stability-v1'
+    paths:
+      - '.github/workflows/faye0009-bootstrap.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch-build-validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout experiment branch
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Install build tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends build-essential python3
+
+      - name: Build and bench promoted FAYE-0008-v2 baseline
+        run: |
+          set -euo pipefail
+          make -C src -j2 build ARCH=x86-64-avx2
+          cp src/stockfish /tmp/FayE-0008-v2
+          chmod +x /tmp/FayE-0008-v2
+          python3 - <<'PY'
+          import json, re, statistics, subprocess
+          vals=[]
+          for _ in range(3):
+              p=subprocess.run(['/tmp/FayE-0008-v2','bench'],capture_output=True,text=True,timeout=300)
+              txt=p.stdout+'\n'+p.stderr
+              if p.returncode:
+                  raise SystemExit(txt)
+              m=re.findall(r'Nodes/second\s*:\s*(\d+)',txt)
+              if not m:
+                  raise SystemExit('Could not parse baseline NPS')
+              vals.append(int(m[-1]))
+          data={'nps':vals,'median_nps':statistics.median(vals)}
+          print(json.dumps(data,indent=2))
+          open('/tmp/faye0008-bench.json','w').write(json.dumps(data)+'\n')
+          PY
+
+      - name: Apply FAYE-0009 source patch
+        run: |
+          set -euo pipefail
+          python3 tools/apply_faye0009_cross_depth_stability.py
+          git diff --check
+
+      - name: Build and correctness-gate FAYE-0009
+        run: |
+          set -euo pipefail
+          make -C src clean
+          make -C src -j2 build ARCH=x86-64-avx2
+          cp src/stockfish /tmp/FayE-0009
+          chmod +x /tmp/FayE-0009
+          printf 'uci\nisready\nquit\n' | /tmp/FayE-0009 > /tmp/uci.txt
+          grep -q '^uciok$' /tmp/uci.txt
+          grep -q '^readyok$' /tmp/uci.txt
+          printf 'position startpos\ngo perft 5\nquit\n' | /tmp/FayE-0009 > /tmp/perft.txt
+          grep -Eq 'Nodes searched[^0-9]*4865609' /tmp/perft.txt
+
+      - name: Comparative NPS guard
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, re, statistics, subprocess
+          base=json.load(open('/tmp/faye0008-bench.json'))
+          vals=[]
+          for _ in range(3):
+              p=subprocess.run(['/tmp/FayE-0009','bench'],capture_output=True,text=True,timeout=300)
+              txt=p.stdout+'\n'+p.stderr
+              if p.returncode:
+                  raise SystemExit(txt)
+              m=re.findall(r'Nodes/second\s*:\s*(\d+)',txt)
+              if not m:
+                  raise SystemExit('Could not parse candidate NPS')
+              vals.append(int(m[-1]))
+          cand=statistics.median(vals)
+          ratio=cand/base['median_nps']
+          result={'baseline_median_nps':base['median_nps'],'candidate_nps':vals,
+                  'candidate_median_nps':cand,'ratio':ratio,'delta_percent':(ratio-1)*100}
+          print(json.dumps(result,indent=2))
+          open('/tmp/faye0009-bench.json','w').write(json.dumps(result,indent=2)+'\n')
+          if ratio < 0.97:
+              raise SystemExit(f'FAYE-0009 NPS regression exceeds 3% guard: {ratio:.4f}')
+          PY
+
+      - name: Commit validated implementation
+        run: |
+          set -euo pipefail
+          git config user.name 'FayE75'
+          git config user.email '107598282+FayE75@users.noreply.github.com'
+          git rm -f tools/apply_faye0009_cross_depth_stability.py .github/workflows/faye0009-bootstrap.yml
+          git add src/search.cpp src/search.h src/search_controller.h src/search_stability.h \
+                  experiments/FAYE-0009-v1-cross-depth-stability.json
+          git diff --cached --check
+          git status --short
+          git commit -m 'Implement FAYE-0009 cross-depth stability memory'
+          git push origin HEAD:experiment/faye-0009-cross-depth-stability-v1
