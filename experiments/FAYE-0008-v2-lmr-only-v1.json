@@ -2,7 +2,7 @@
   "id": "FAYE-0008-v2-lmr-only-v1",
   "base": "promoted FAYE-0008-v2",
   "purpose": "Diagnostic channel ablation after conservative tuning-v1 regressed against the same Stockfish latest baseline.",
-  "change": "Keep promoted v2 uncertainty signal and LMR response; disable adaptive futility-margin deltas only.",
+  "change": "Keep promoted v2 uncertainty signal, activation depth, thresholds, and LMR response exactly; disable adaptive futility-margin deltas only.",
   "comparison": "official-stockfish/Stockfish master fetched at run start",
   "protocol": {
     "games": 600,
@@ -10,7 +10,10 @@
     "book": "UHO_Lichess_4852_v1.epd",
     "tc": "10+0.1",
     "threads": 1,
-    "hash_mb": 16
+    "hash_mb": 16,
+    "concurrency": 2
   },
-  "decision": "Prepared branch; source edit still required before triggering."
+  "status": "ready-to-run",
+  "decision_rule": "Use this as a diagnostic ablation, not an automatic promotion test. Compare against promoted FAYE-0008-v2 and the same/equivalent Stockfish-latest reference to determine whether the adaptive futility channel contributes positively or negatively.",
+  "next": "If LMR-only improves over promoted v2, investigate futility as the likely harmful channel. If LMR-only regresses, test futility-only before changing the unified uncertainty signal."
 }
