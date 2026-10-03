@@ -1,0 +1,40 @@
+{
+  "experiment": "FAYE-0009-v2-cross-depth-stability-unstable-only",
+  "status": "strength-test-ready",
+  "base_branch": "main",
+  "base_sha": "7ec08af834430aef731f1189bf982418d2a6af94",
+  "promoted_baseline": "FAYE-0008-v2",
+  "parent_experiment": "FAYE-0009-v1-cross-depth-stability-memory",
+  "hypothesis": "The v1 stable-position +48 LMR reward may offset the benefit of protecting genuinely unstable positions. Preserve the cross-depth memory but make it one-sided so stable positions fall back exactly to the promoted FAYE-0008-v2 policy.",
+  "feature": {
+    "name": "Per-Position Cross-Depth Stability Memory - Unstable Only",
+    "scope": "per-worker, per-go, internal search positions",
+    "table_entries": 4096,
+    "minimum_depth": 11,
+    "stable_threshold": 3,
+    "unstable_threshold": -3,
+    "stable_lmr_delta": 0,
+    "unstable_lmr_delta": -96,
+    "only_controlled_channel": "LMR",
+    "persistent_across_games": false,
+    "gpu_required": false
+  },
+  "design_guards": [
+    "Retain the promoted FAYE-0008-v2 uncertainty controller unchanged",
+    "Stable positions receive no additional LMR reward",
+    "Only repeatedly unstable exact positions get a conservative LMR correction",
+    "No NNUE or evaluation changes",
+    "No NMP, ProbCut, TT-cutoff, razoring, or futility-policy changes",
+    "No heap allocation in the node hot path",
+    "Ignore excluded-move/singular-search observations",
+    "Reset stability memory once per UCI go"
+  ],
+  "primary_strength_protocol": {
+    "opponent": "official-stockfish/Stockfish master fetched at run start",
+    "paired_openings": "UHO_Lichess_4852_v1.epd",
+    "threads": 1,
+    "games": 600,
+    "workflow": ".github/workflows/faye-vs-stockfish-latest.yml"
+  },
+  "promotion_rule": "Do not promote on point estimate alone. Compare against the promoted FAYE-0008-v2 reference and FAYE-0009-v1 under the recorded Stockfish SHA; promote only if evidence meaningfully supports a stronger engine."
+}
