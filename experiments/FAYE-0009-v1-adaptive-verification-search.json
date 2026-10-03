@@ -1,0 +1,73 @@
+{
+  "id": "FAYE-0009-v1",
+  "title": "Risk-Gated Adaptive Verification Search",
+  "status": "planned",
+  "branch": "experiment/faye-0009-adaptive-verification-search-v1",
+  "parent_branch": "main",
+  "parent_commit": "7ec08af834430aef731f1189bf982418d2a6af94",
+  "baseline": "FAYE-0008-v2 promoted-final",
+  "runtime": "CPU-only",
+  "scale": "major-search-architecture-experiment",
+  "motivation": "FAYE-0008 showed that broad micro-calibration of LMR amplitude is not a productive primary direction. FAYE-0009 therefore changes the semantics of selective-search trust: risky pruning and cutoff decisions may be verified before the engine commits to them, while ordinary low-risk nodes retain the fast baseline path.",
+  "core_hypothesis": "A small fraction of structurally uncertain nodes account for a disproportionate share of harmful selective-search mistakes. Spending extra search only to verify high-impact cutoffs at those nodes can recover tactical and strategic accuracy at lower cost than globally reducing pruning or LMR aggressiveness.",
+  "architecture": {
+    "risk_model": {
+      "description": "Compute a compact node-risk/trust classification from search signals that already exist in FayE/Stockfish, with no second network and no dynamic allocation.",
+      "candidate_signals": [
+        "FAYE-0008 root volatility and root best-move churn context",
+        "static-eval versus effective-eval disagreement",
+        "TT value versus static-eval disagreement",
+        "correction-history magnitude",
+        "improving and opponent-worsening state",
+        "PV/cut/all node type",
+        "TT bound quality and TT depth relative to current depth",
+        "move-order/cutoff evidence already present in search state"
+      ],
+      "implementation_constraint": "Keep the hot-path payload register-sized and avoid heap allocation, locks, or additional neural-network evaluation."
+    },
+    "verification_layer": {
+      "description": "Before accepting selected high-impact pruning/cutoff decisions at high-risk nodes, perform a bounded verification search. Low-risk nodes remain on the promoted FAYE-0008-v2 path.",
+      "initial_targets": [
+        "TT fail-high/fail-low cutoff trust at sufficiently deep non-PV nodes",
+        "null-move fail-high verification at risky medium/deep nodes",
+        "ProbCut acceptance when local evidence strongly disagrees with the cutoff"
+      ],
+      "non_targets_v1": [
+        "Do not retune FAYE-0008 LMR constants as part of the primary v1 change",
+        "Do not retune FAYE-0008 futility constants as part of the primary v1 change",
+        "Do not change NNUE architecture or weights",
+        "Do not add GPU dependencies"
+      ]
+    },
+    "budget_control": {
+      "description": "Verification must be bounded so the feature cannot recursively explode the tree.",
+      "planned_guards": [
+        "minimum depth gate",
+        "no recursive verification of an already verified decision",
+        "at most one verification class activation per node",
+        "reduced/null-window verification where correctness permits",
+        "explicit NPS/node-growth guard before strength testing"
+      ]
+    }
+  },
+  "why_this_is_major": [
+    "It changes whether FayE trusts and accepts selective-search cutoffs, rather than only changing a numeric margin.",
+    "It introduces a new verification-control layer across multiple pruning mechanisms.",
+    "It creates a reusable architecture for future risk-aware pruning, extensions, and search-budget allocation.",
+    "It preserves the successful FAYE-0008 controller as the baseline instead of replacing it with another parameter sweep."
+  ],
+  "development_plan": [
+    "Implement a compact risk/trust object with instrumentation but no behavior change and verify benchmark parity.",
+    "Activate one verification target first, preferably risk-gated null-move verification, to isolate cost and strength.",
+    "Only after the first target is understood, add TT/ProbCut verification under the same bounded architecture.",
+    "Run correctness gates, perft, deterministic bench, and node/NPS guard before any 600-game match.",
+    "Primary strength screen: 600 paired games against official-stockfish/Stockfish master fetched at run start, UHO openings, Threads=1, recorded candidate and Stockfish SHAs."
+  ],
+  "success_criteria": {
+    "correctness": "UCI/isready and perft gates pass with no search instability or recursion bug.",
+    "performance": "Target <=3% median NPS regression versus the promoted FAYE-0008-v2 baseline unless node-growth evidence clearly justifies a revised guard.",
+    "strength": "Use paired 600-game Stockfish-latest evidence as the first strength screen; do not promote from a small or incomplete run.",
+    "promotion": "Promotion requires a meaningful strength signal plus acceptable compute cost and clean correctness/infrastructure results."
+  },
+  "decision_policy": "FAYE-0009 is a new major architecture line. Do not continue FAYE-0008 micro-tuning on this branch. Implement and evaluate verification mechanisms incrementally so each causal contribution remains diagnosable."
+}
